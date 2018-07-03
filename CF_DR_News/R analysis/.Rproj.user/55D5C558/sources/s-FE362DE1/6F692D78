@@ -1,0 +1,29 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1525104978239.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "6F692D78",
+    "lastKnownWriteTime" : 8093582259736543233,
+    "last_content_update" : 1525104978239,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "65AFF631",
+        "caption" : "CF_betas",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=CF_betas&cache_key=65AFF631",
+        "displayedObservations" : 162,
+        "environment" : "",
+        "object" : "CF_betas",
+        "preview" : 0,
+        "totalObservations" : 162,
+        "variables" : 26
+    },
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

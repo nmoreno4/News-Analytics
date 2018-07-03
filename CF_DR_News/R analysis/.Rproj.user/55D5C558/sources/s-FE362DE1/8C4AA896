@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1521806876289.000,
+    "dirty" : true,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "8C4AA896",
+    "lastKnownWriteTime" : 1525106149,
+    "last_content_update" : 1525106852728,
+    "path" : "~/CodeGood/CF_DR_News/R analysis/5by5reg.R",
+    "project_path" : "5by5reg.R",
+    "properties" : {
+        "cursorPosition" : "76,35",
+        "scrollLine" : "70",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

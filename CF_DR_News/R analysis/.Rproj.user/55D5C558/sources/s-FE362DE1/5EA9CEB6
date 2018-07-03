@@ -1,0 +1,29 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1521809809031.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "5EA9CEB6",
+    "lastKnownWriteTime" : 8093582259736543233,
+    "last_content_update" : 1521809809031,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "179BD725",
+        "caption" : "CF_coeff",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=CF_coeff&cache_key=179BD725",
+        "displayedObservations" : 5,
+        "environment" : "",
+        "object" : "CF_coeff",
+        "preview" : 0,
+        "totalObservations" : 5,
+        "variables" : 5
+    },
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1520003813780.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "29E1064D",
+    "lastKnownWriteTime" : 1520957456,
+    "last_content_update" : 1520957456191,
+    "path" : "~/CodeGood/CF_DR_News/R analysis/regressionsV1.R",
+    "project_path" : "regressionsV1.R",
+    "properties" : {
+        "cursorPosition" : "13,48",
+        "scrollLine" : "0"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

@@ -1,0 +1,29 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1525104884156.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "ED6D7172",
+    "lastKnownWriteTime" : 8093582261672833913,
+    "last_content_update" : 1525104884156,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "340178F6",
+        "caption" : "DR_news",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=DR_news&cache_key=340178F6",
+        "displayedObservations" : 532,
+        "environment" : "",
+        "object" : "DR_news",
+        "preview" : 0,
+        "totalObservations" : 532,
+        "variables" : 26
+    },
+    "relative_order" : 7,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

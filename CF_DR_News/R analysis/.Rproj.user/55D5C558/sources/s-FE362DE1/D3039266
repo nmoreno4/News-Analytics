@@ -1,0 +1,29 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1521809556226.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "D3039266",
+    "lastKnownWriteTime" : 1521809539,
+    "last_content_update" : 1521809556226,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "95BCC9FF",
+        "caption" : "DR_coeff",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=DR_coeff&cache_key=95BCC9FF",
+        "displayedObservations" : "5",
+        "environment" : "",
+        "object" : "DR_coeff",
+        "preview" : "0",
+        "totalObservations" : "5",
+        "variables" : "5"
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

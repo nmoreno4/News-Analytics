@@ -1,0 +1,89 @@
+require(stargazer)
+require(broom)
+require(dynlm)
+tFrequence = "1 month"
+excludeDays = "0 days"
+pastRollWindow = "0 years"
+decayParam = "1"
+nFilter = "(true, 2)_true"
+pType = "5by5"
+pNb = "1"
+df_S1 <- read.csv(paste("/home/nicolas/Data/News Analytics Series/",tFrequence, "/", excludeDays, "/", pastRollWindow, "/", decayParam, "/", nFilter, "/", pType, "_", pNb, ".csv", sep=""), header = TRUE, sep=";")
+pNb = "2"
+df_S2 <- read.csv(paste("/home/nicolas/Data/News Analytics Series/",tFrequence, "/", excludeDays, "/", pastRollWindow, "/", decayParam, "/", nFilter, "/", pType, "_", pNb, ".csv", sep=""), header = TRUE, sep=";")
+pNb = "3"
+df_S3 <- read.csv(paste("/home/nicolas/Data/News Analytics Series/",tFrequence, "/", excludeDays, "/", pastRollWindow, "/", decayParam, "/", nFilter, "/", pType, "_", pNb, ".csv", sep=""), header = TRUE, sep=";")
+pNb = "4"
+df_S4 <- read.csv(paste("/home/nicolas/Data/News Analytics Series/",tFrequence, "/", excludeDays, "/", pastRollWindow, "/", decayParam, "/", nFilter, "/", pType, "_", pNb, ".csv", sep=""), header = TRUE, sep=";")
+pNb = "5"
+df_S5 <- read.csv(paste("/home/nicolas/Data/News Analytics Series/",tFrequence, "/", excludeDays, "/", pastRollWindow, "/", decayParam, "/", nFilter, "/", pType, "_", pNb, ".csv", sep=""), header = TRUE, sep=";")
+CF_betas <- read.csv("/home/nicolas/Data/CF DR News/CF_36m_5by5.csv", header = TRUE, sep=";")
+DR_betas <- read.csv("/home/nicolas/Data/CF DR News/DR_36m_5by5.csv", header = TRUE, sep=";")
+CF_news <- read.csv("/home/nicolas/Data/CF DR News/CF5x5.csv", header = TRUE, sep=",")
+DR_news <- read.csv("/home/nicolas/Data/CF DR News/DR5x5.csv", header = TRUE, sep=",")
+df <- cbind(df_S1[1:162,], df_S2[1:162,], df_S3[1:162,], df_S4[1:162,], df_S5[1:162,], CF_betas, DR_betas)
+df <- cbind(df_S1, df_S2, df_S3, df_S4, df_S5, CF_news[354:527,], DR_news[354:527,])
+
+
+specDR = lm(DR1 ~ VW_sentClasRel_ptf_5by5_size_value_1.1, data = df)
+specCF = lm(CF1 ~ VW_sentClasRel_ptf_5by5_size_value_1.1, data = df)
+summary(specDR)
+summary(specCF)
+specDR = lm(DR2 ~ VW_sentClasRel_ptf_5by5_size_value_1.2, data = df)
+specCF = lm(CF2 ~ VW_sentClasRel_ptf_5by5_size_value_1.2, data = df)
+summary(specDR)
+summary(specCF)
+specDR = lm(DR3 ~ VW_sentClasRel_ptf_5by5_size_value_1.3, data = df)
+specCF = lm(CF3 ~ VW_sentClasRel_ptf_5by5_size_value_1.3, data = df)
+summary(specDR)
+summary(specCF)
+specDR = lm(DR4 ~ VW_sentClasRel_ptf_5by5_size_value_1.4, data = df)
+specCF = lm(CF4 ~ VW_sentClasRel_ptf_5by5_size_value_1.4, data = df)
+summary(specDR)
+summary(specCF)
+specDR = lm(DR13 ~ VW_diffPosNegRel_ptf_5by5_size_value_1.5, data = df)
+specCF = lm(CF13 ~ VW_diffPosNegRel_ptf_5by5_size_value_1.5, data = df)
+summary(specDR)
+summary(specCF)
+
+ctype = "sentClasRel"
+pSpec = c("1.1", "1.2", "1.3", "1.4", "1.5", "2.1", "2.2", "2.3", "2.4", "2.5", "3.1", "3.2", "3.3", "3.4", "3.5", "4.1", "4.2", "4.3", "4.4", "4.5", "5.1", "5.2", "5.3", "5.4", "5.5")
+DR_coeff = matrix(nrow=5, ncol=5)
+for (i in 1:25){
+  fo <- as.formula(paste("DR", i, " ~ VW_", ctype, "_ptf_5by5_size_value_", pSpec[i], sep=""))
+  reg = do.call("lm", list(fo, quote(df)))
+  if (i%%5 == 0){
+    DR_coeff[ceiling(i/5),5] = summary(reg)$coef[2,3]
+  } else {
+    DR_coeff[ceiling(i/5),((i%%5))] = summary(reg)$coef[2,3]
+  }
+}
+
+ctype = "sentClasRel"
+pSpec = c("1.1", "1.2", "1.3", "1.4", "1.5", "2.1", "2.2", "2.3", "2.4", "2.5", "3.1", "3.2", "3.3", "3.4", "3.5", "4.1", "4.2", "4.3", "4.4", "4.5", "5.1", "5.2", "5.3", "5.4", "5.5")
+CF_coeff = matrix(nrow=5, ncol=5)
+for (i in 1:25){
+  fo <- as.formula(paste("CF", i, " ~ VW_", ctype, "_ptf_5by5_size_value_", pSpec[i], sep=""))
+  reg = do.call("lm", list(fo, quote(df)))
+  if (i%%5 == 0){
+    CF_coeff[ceiling(i/5),5] = summary(reg)$coef[2,3]
+  } else {
+    CF_coeff[ceiling(i/5),((i%%5))] = summary(reg)$coef[2,3]
+  }
+}
+
+
+ctype = "sentClasRel"
+pSpec = c("1.1", "1.2", "1.3", "1.4", "1.5", "2.1", "2.2", "2.3", "2.4", "2.5", "3.1", "3.2", "3.3", "3.4", "3.5", "4.1", "4.2", "4.3", "4.4", "4.5", "5.1", "5.2", "5.3", "5.4", "5.5")
+CF_coeff = matrix(nrow=5, ncol=5)
+for (i in 1:25){
+  fo <- as.formula(paste("VW_", ctype, "_ptf_5by5_size_value_", pSpec[i], " ~ CF", i, "+ DR", i, sep=""))
+  reg = do.call("lm", list(fo, quote(df)))
+  if (i%%5 == 0){
+    CF_coeff[ceiling(i/5),5] = summary(reg)$coef[2,3]
+  } else {
+    CF_coeff[ceiling(i/5),((i%%5))] = summary(reg)$coef[2,3]
+  }
+}
+
+
