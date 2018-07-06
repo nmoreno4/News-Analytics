@@ -102,6 +102,9 @@ function Rregressions(X, Y, MR, MS, HML, SMB, UMD, controlmarketret, controlmark
         @rput X3
     else
         X1 = X
+        if sum(X1)==0 || sum(X1-1)==0 || abs(sum(X1-mean(X1)))<0.0000001
+            X1+=(rand(length(X1))/10000)
+        end
         @rput X1
     end
     @rput Y
@@ -178,10 +181,8 @@ function Rregressions(X, Y, MR, MS, HML, SMB, UMD, controlmarketret, controlmark
             @rget betaNeg
             beta = [NaN, NaN, NaN, NaN]
         else
-            R"print(summary(fit)[['coefficients']]['X1',])"
             R"beta = summary(fit)[['coefficients']]['X1',]"
             @rget beta
-            print(beta)
             betaPos = [NaN, NaN, NaN, NaN]
             betaNeg = [NaN, NaN, NaN, NaN]
         end
@@ -189,6 +190,8 @@ function Rregressions(X, Y, MR, MS, HML, SMB, UMD, controlmarketret, controlmark
         # R"print(X)"
         # R"print(Y)"
         R"print(X1)"
+        print(sum(X1-mean(X1)))
+        print(βAsym)
         # R"print('')"
         R"print(summary(fit))"
     end
@@ -218,7 +221,6 @@ function Rregressions(X, Y, MR, MS, HML, SMB, UMD, controlmarketret, controlmark
     end
     # From R, the statistics for the coefficients are reported in the following order:
     # Estimate - Std. Error - t value - p value
-    print("hey")
     coeffs = Dict("α_coeff" => alpha[1], "α_tstat" => alpha[3],
                   "β_coeff" => beta[1], "β_tstat" => beta[3],
                   "βPos_coeff" => betaPos[1], "βPos_tstat" => betaPos[3],
@@ -510,6 +512,8 @@ end
 function meanresults(crtquint, classification, MERGEconnect, nextperlag, prevperlag, Series)
     ret, VWret, wport, BMclass, Sizeclass, StoriesCount, SentClasRel = quintileret(crtquint, classification, MERGEconnect, nextperlag, prevperlag)
 
+    annualrate = (abs(prevperlag-nextperlag)/Dates.Month(12))^-1
+
     @rput VWret
     MR = Series["Mktret"]
     HML = Series["hml"]
@@ -526,11 +530,11 @@ function meanresults(crtquint, classification, MERGEconnect, nextperlag, prevper
         push!(a, mean(row))
     end
     push!(ttests, a)
-    m = (mean(a)+1)^252-1
-    sd = std(a)*(252^0.5)
-    mVW = (mean(VWret)+1)^252-1
+    m = (mean(a)+1)^annualrate-1
+    sd = std(a)*(annualrate^0.5)
+    mVW = (mean(VWret)+1)^annualrate-1
     push!(ttests, VWret)
-    sdVW = std(VWret)*(252^0.5)
+    sdVW = std(VWret)*(annualrate^0.5)
     a = Float64[]
     for row in wport
         push!(a, mean(row))
@@ -563,7 +567,6 @@ function meanresults(crtquint, classification, MERGEconnect, nextperlag, prevper
     Sent =  NaNMath.mean(sentSeries)
     @rput sentSeries
 
-    print("$VWret \n $MR")
     R"fit <- lm(VWret ~ MR + SMB + HML + UMD)"
     R"alpha_4F_ptf_wholeperiod = summary(fit)[['coefficients']]['(Intercept)',1]"
     R"fit <- lm(VWret ~ MR + SMB + HML)"
@@ -599,6 +602,7 @@ function quintileret(quint, classification, MERGEconnect, nextperlag, prevperlag
     resStoriesCount = []
     resSentClasRel = []
     for date in classification
+        # periodrate = Dates.days(abs((date[1]-prevperlag)-(date[1]+nextperlag)))-10
         dateret = Float64[]
         datewport = Float64[]
         dateBMclass = Float64[]
@@ -628,7 +632,8 @@ function quintileret(quint, classification, MERGEconnect, nextperlag, prevperlag
                 push!(SentClasRel, entry["sentClasRel"])
             end
             if length(rets)>0
-                push!(dateret, geomean(rets+1)-1)
+                periodrate = length(rets)
+                push!(dateret, geomean(rets+1)^periodrate-1)
                 push!(datewport, mean(wports))
                 push!(dateBMclass, mean(BMclasss))
                 push!(dateSizeclass, mean(Sizeclasss))
