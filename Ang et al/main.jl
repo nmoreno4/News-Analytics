@@ -13,7 +13,7 @@ using Mongo, TimeSeries, Plots, DataFrames, NaNMath, RCall,
 
 datarootpath = "/home/nicolas/Data/Results/Ang et al"
 ystart, mstart, dstart = 2003, 1, 1
-yend, mend, dend = 2016, 6, 30
+yend, mend, dend = 2017, 6, 30
 
 client = MongoClient()
 MERGEconnect = MongoCollection(client, "NewsDB", "CRSPTRNAmerge4")
@@ -51,7 +51,7 @@ df = DataFrame(EW_return = Array{Float64, 1}(40)*NaN, EW_stdev = Array{Float64, 
                Avg_β_tstat = Array{Float64, 1}(40)*NaN, Avg_ϵ² = Array{Float64, 1}(40)*NaN,
                Avg_resError = Array{Float64, 1}(40)*NaN)
 setting=6
-for setting in [24]
+for setting in [15]
     allresults, allreturnseries, allalphaseries = [], [], []
     allbetaseries, allstoriesCountseries, allsentimentseries = [], [], []
     df = DataFrame(EW_return = Array{Float64, 1}(40)*NaN, EW_stdev = Array{Float64, 1}(40)*NaN,
@@ -74,9 +74,9 @@ for setting in [24]
         postformationspan = Dates.Month(1)
         minobs = (15, 45)
     elseif setting in [7,8,9,19,20,21]
-        formationspan = Dates.Month(6)
-        postformationspan = Dates.Month(1)
-        minobs = (20, 60)
+        formationspan = Dates.Month(24)
+        postformationspan = Dates.Month(6)
+        minobs = (30, 90)
     elseif setting in [10,11,12,22,23,24]
         formationspan = Dates.Month(12)
         postformationspan = Dates.Month(1)
@@ -98,7 +98,7 @@ for setting in [24]
     lastdate = Dates.Date(yend,mend,dend)
     ΔNA = false
     βAsym = false
-    classvar = ["β" , "_coeff"]
+    classvar = ["β" , "_tstat"]
     controlmarketret = true
     controlmarketsent = false
     FFcontrol = false
@@ -155,6 +155,7 @@ for setting in [24]
     end
 
     # Store the quintiles accoring to the classification variable (β)
+    percsign = Dict(1=>[], 5=>[], 10=>[], 15=>[], 20=>[], 50=>[], 80=>[], 85=>[], 90=>[], 95=>[], 99=>[])
     if βAsym
         percclass = Dict("Pos"=>Dict(), "Neg"=>Dict())
         for date in ClassregResults["$(classvar[1])Pos$(classvar[2])"]
@@ -167,8 +168,16 @@ for setting in [24]
         percclass = Dict("sent"=>Dict())
         for date in ClassregResults["$(classvar[1])$(classvar[2])"]
             percclass["sent"][date[1]] = percentile(date[2], [20,40,60,80])
+            for ii in [1,5,10,15,20,50,80,85,90,95,99]
+                push!(percsign[ii], percentile(date[2], [ii]))
+            end
         end
     end
+    for ii in [1,5,10,15,20,50,80,85,90,95,99]
+        print("\n percentile $ii : ")
+        print(mean(percsign[ii]))
+    end
+
 
     # Dictionary where I store for each date all the stock permIDs
     if βAsym
@@ -359,7 +368,8 @@ for setting in [24]
     # push!(allresults, finalresults)
 
     mkpath("$(datarootpath)/$setting")
-    output = "$(datarootpath)/$setting/res$(βAsym).csv"
+    mkpath("$(datarootpath)/$setting/$controlmarketret")
+    output = "$(datarootpath)/$setting/$controlmarketret/res$(βAsym).csv"
     CSV.write(output, df)
 
     seriesdf = rdates
@@ -367,7 +377,7 @@ for setting in [24]
         seriesdf = hcat(seriesdf, series)
     end
     seriesdf = DataFrames.DataFrame(seriesdf)
-    output = "$(datarootpath)/$setting/retseries$(βAsym).csv"
+    output = "$(datarootpath)/$setting/$controlmarketret/retseries$(βAsym).csv"
     CSV.write(output, seriesdf)
 
     seriesdf = rdates
@@ -375,7 +385,7 @@ for setting in [24]
         seriesdf = hcat(seriesdf, series)
     end
     seriesdf = DataFrames.DataFrame(seriesdf)
-    output = "$(datarootpath)/$setting/storiescountseries$(βAsym).csv"
+    output = "$(datarootpath)/$setting/$controlmarketret/storiescountseries$(βAsym).csv"
     CSV.write(output, seriesdf)
 
     seriesdf = rdates
@@ -383,22 +393,24 @@ for setting in [24]
         seriesdf = hcat(seriesdf, series)
     end
     seriesdf = DataFrames.DataFrame(seriesdf)
-    output = "$(datarootpath)/$setting/sentimentseries$(βAsym).csv"
+    output = "$(datarootpath)/$setting/$controlmarketret/sentimentseries$(βAsym).csv"
     CSV.write(output, seriesdf)
 
-    @save "$(datarootpath)/$setting/classification$(βAsym).jld2" classification
+    @save "$(datarootpath)/$setting/$controlmarketret/classification$(βAsym).jld2" classification
 end #for setting
 
 
-input = "$(datarootpath)/15/retseriesfalse.csv"
-a = CSV.read(input)
-sameper = Array{Float64}(a[1:end, 2:6])
-nextper = Array{Float64}(a[1:end, 7:11])
-@rput sameper
-@rput nextper
-R"monotonicity::monoRelation(sameper,1000,TRUE,FALSE,6)"
-R"monotonicity::monoSummary(sameper,1000,100,TRUE,FALSE,FALSE,6)"
-R"(colMeans(sameper)+1)^12-1"
+# input = "$(datarootpath)/3/retseriesfalse.csv"
+# a = CSV.read(input)
+# sameper = Array{Float64}(a[1:end, 2:6])
+# nextper = Array{Float64}(a[1:end, 7:11])
+# # sameper = Array{Float64}(a[1:end, 12:16])
+# # nextper = Array{Float64}(a[1:end, 17:21])
+# @rput sameper
+# @rput nextper
+# R"monotonicity::monoRelation(sameper,1000,FALSE,FALSE,6)"
+# R"monotonicity::monoSummary(sameper,1000,100,TRUE,FALSE,FALSE,6)"
+# R"(colMeans(sameper)+1)^12-1"
 # seriesmat = zeros(length(allreturnseries[1]), 5,length(allreturnseries)/5)*NaN
 # cc = 0
 # for col in allreturnseries

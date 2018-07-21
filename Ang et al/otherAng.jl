@@ -633,7 +633,7 @@ function quintileret(quint, classification, MERGEconnect, nextperlag, prevperlag
             end
             if length(rets)>0
                 periodrate = length(rets)
-                push!(dateret, geomean(rets+1)^periodrate-1)
+                push!(dateret, mycumret(rets))
                 push!(datewport, mean(wports))
                 push!(dateBMclass, mean(BMclasss))
                 push!(dateSizeclass, mean(Sizeclasss))
@@ -652,7 +652,13 @@ function quintileret(quint, classification, MERGEconnect, nextperlag, prevperlag
     return resret, resVWret, reswport, resBMclass, resSizeclass, resStoriesCount, resSentClasRel
 end
 
-
-
+function mycumret(x)
+    res = 1
+    for i in x
+        res*=(1+i)
+    end
+    res-=1
+    return res
+end
 
 end #module
