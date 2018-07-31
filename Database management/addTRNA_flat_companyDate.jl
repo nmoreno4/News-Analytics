@@ -1,4 +1,6 @@
 #######################################################################################
+# Output has one entry for ech stock/day pair
+#######################################################################################
 # Insert TRNA raw data (in JSON format) inside a well structured MongoDB
 # collection with approriate nesting for easy querying and limited
 # data redundancy.
@@ -8,19 +10,46 @@
 
 ###############################################
 #%% Import libraries and define user variables
-using Mongo
-using LibBSON
-using JSON
+using Mongo, LibBSON, JSON, TimeZones
+include("WRDSmodules/WRDSdownload.jl")
+include("Mongo_Queries/MongoDB_queries.jl")
 
 # Define Mongo instance
 client = MongoClient()   # Defaults to MongoClient("localhost", 27017)
-News = MongoCollection(client, "NewsDB", "News")
+coll_name = "Flat_stock_date"
+News = MongoCollection(client, "NewsDB", coll_name)
 # Beginning and starting dates
 y_start = 2003
 y_end = 2017
-# Path to the raw data. The @ will be replaced below with the approriate year to retrieve the correct file. Check the 40060088 in case it has changed from the source.
-datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060088.JSON.txt/data"
+# Path to the raw data. The @ will be replaced below with the approriate year to retrieve the correct file. Check the 40060090 in case it has changed from the source.
+datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
 
+# Define all possible trading days
+FF_factors = WRDSdownload.FF_factors_download(["01/01/$(y_start)", "12/31/$(y_end)"])
+dates = FF_factors[:date]
+function trading_day(dates, crtdate, mktClose=Dates.Hour(16), UTC_TZ_adj=Dates.Hour(-5))
+  i=0
+  res = 0
+  if crtdate < dates[i+1]
+    res = i+1
+  end
+  for d in dates
+    i+=1
+    if dates[i] < crtdate <= dates[i+1]
+      res = i+1
+      break
+    end
+  end
+  return res
+end
+a = dates[1000]
+b = dates[1001]
+c = MongoDB_queries.getAnalyticsCursor(MongoCollection(client, "NewsDB", "News"), a, b, 4295908552)
+d = []
+for entry in c
+  push!(d, entry)
+end
+d[1]["takes"][2]["analytics"]
 
 """
 TRNA_as_dictionary = json_to_dic(TRNA_as_JSON::BSONobject)
@@ -32,7 +61,7 @@ TRNA_as_dictionary = json_to_dic(TRNA_as_JSON::BSONobject)
 """
 function json_to_dic(item)
   altId = item["newsItem"]["metadata"]["altId"]
-  firstCreated = Dates.DateTime(item["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  firstCreated = Dates.DateTime(item["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   guId = item["newsItem"]["sourceId"]
   uId = item["id"]
   assetId =  item["analytics"]["analyticsScores"][1]["assetId"]
@@ -60,33 +89,31 @@ function json_to_dic(item)
   urgency = item["newsItem"]["urgency"]
   subjects = item["newsItem"]["subjects"]
   provider = item["newsItem"]["provider"]
-  sourceTimestamp = Dates.DateTime(item["newsItem"]["sourceTimestamp"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  sourceTimestamp = Dates.DateTime(item["newsItem"]["sourceTimestamp"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   audiences = item["newsItem"]["metadata"]["audiences"]
-  feedTimestamp = Dates.DateTime(item["newsItem"]["metadata"]["feedTimestamp"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  feedTimestamp = Dates.DateTime(item["newsItem"]["metadata"]["feedTimestamp"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   takeSequence = item["newsItem"]["metadata"]["takeSequence"]
 
   story = Dict("altId" => altId,
-                  "firstCreated" => firstCreated,
-                  "takes" => [
-                    Dict(
-                      "audiences" => audiences,
-                      "bodySize" => bodySize,
-                      "companyCount" => companyCount,
-                      "exchangeAction" => exchangeAction,
-                      "feedTimestamp" => feedTimestamp,
-                      "guId" => guId,
-                      "uId" => uId,
-                      "headline" => headline,
-                      "headlineTag" => headlineTag,
-                      "language" => language,
-                      "marketCommentary" => marketCommentary,
-                      "provider" => provider,
-                      "sentenceCount" => sentenceCount,
-                      "sourceTimestamp" => sourceTimestamp,
-                      "subjects" => subjects,
-                      "takeSequence" => takeSequence,
-                      "urgency" => urgency,
-                      "wordCount" => wordCount,
+               "firstCreated" => firstCreated,
+               "audiences" => audiences,
+               "bodySize" => bodySize,
+               "companyCount" => companyCount,
+               "exchangeAction" => exchangeAction,
+               "feedTimestamp" => feedTimestamp,
+               "guId" => guId,
+               "uId" => uId,
+               "headline" => headline,
+               "headlineTag" => headlineTag,
+               "language" => language,
+               "marketCommentary" => marketCommentary,
+               "provider" => provider,
+               "sentenceCount" => sentenceCount,
+               "sourceTimestamp" => sourceTimestamp,
+               "subjects" => subjects,
+               "takeSequence" => takeSequence,
+               "urgency" => urgency,
+               "wordCount" => wordCount,
                       "analytics" => [
                         Dict(
                           "assetId" => assetId,
@@ -102,10 +129,7 @@ function json_to_dic(item)
                           "linkedIds" => linkedIds,
                           "noveltyCounts" => noveltyCounts,
                           "volumeCounts" => volumeCounts
-                        ) # Close this analytics Dict
-                      ] # Close analytics array for eventual multiple companies
-                    ) # Close this takes Dict
-                  ]) # Close takes array for eventual multiple takes as well as global story Dict
+              ) # Close takes array for eventual multiple takes as well as global story Dict
   return story
 end
 
@@ -122,7 +146,7 @@ updatePos, guIdexists, ntakes = nbTakes(TRNA_as_JSON::BSONobject)
 """
 function nbTakes(entry)
   # Gather guId, altId and timestamp in variables for ease of use
-  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   crtaltId = entry["newsItem"]["metadata"]["altId"]
   crtguId = entry["newsItem"]["sourceId"]
   # Find cursor on MongoDB to the right story (only one in fact)
@@ -156,7 +180,7 @@ addOnlyAnalytics(entry::BSONobject, updatePos::Int)
 """
 function addOnlyAnalytics(entry, updatePos)
   # Gather guId, altId and timestamp in variables for ease of use
-  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   crtaltId = entry["newsItem"]["metadata"]["altId"]
   crtguId = entry["newsItem"]["sourceId"]
   #Do the update operation in the MongoDB collection
@@ -164,7 +188,7 @@ function addOnlyAnalytics(entry, updatePos)
 end #fun
 
 """
-addOnlyAnalytics(entry::BSONobject, updatePos::Int)
+addCompleteTake(entry::BSONobject)
 ============================
 ## Adds a whole take to a story in the MongoDb collection.
 
@@ -173,7 +197,7 @@ addOnlyAnalytics(entry::BSONobject, updatePos::Int)
 """
 function addCompleteTake(entry)
   # Gather guId, altId and timestamp in variables for ease of use
-  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+  crtdate = Dates.DateTime(entry["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
   crtaltId = entry["newsItem"]["metadata"]["altId"]
   crtguId = entry["newsItem"]["sourceId"]
   #Do the update operation in the MongoDB collection
@@ -184,7 +208,7 @@ end #fun
 #############################################################################%%
 # This block is to create all the stories (empty) in the MongoDB collection #
 #############################################################################
-
+wholedic = []
 for y in y_start:y_end
   print(y)
   tic()
@@ -194,22 +218,22 @@ for y in y_start:y_end
   i = 0
   for l in eachline(f)
     i+=1
-    if length(i)%20000==0
-      print(i)
-    end
+    # if i%20000==0
+    #   print(i)
+    # end
     if length(l)>6
       if l[1:6]=="{\"guid" # The two conditions==true if I am on a valid line in the JSON file
         if l[end]==',' #not the last line
           # simply add the altId, firstCreated pair to the list of all of them
           altId = JSON.parse(l[1:end-1])["data"]["newsItem"]["metadata"]["altId"]
-          firstCreated = Dates.DateTime(JSON.parse(l[1:end-1])["data"]["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+          firstCreated = Dates.DateTime(JSON.parse(l[1:end-1])["data"]["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
           if (y>y_start && firstCreated>=DateTime(y,1,1)) || y==y_start
             push!(altidstime, [altId, firstCreated])
           end
         else #last line
           # simply add the altId, firstCreated pair to the list of all of them
           altId = JSON.parse(l[1:end])["data"]["newsItem"]["metadata"]["altId"]
-          firstCreated = Dates.DateTime(JSON.parse(l[1:end])["data"]["newsItem"]["metadata"]["firstCreated"], "yyyy-mm-ddTHH:MM:SS.sssZ")
+          firstCreated = Dates.DateTime(JSON.parse(l[1:end])["data"]["newsItem"]["metadata"]["firstCreated"][1:end-1], "yyyy-mm-ddTHH:MM:SS.sss")
           if (y>y_start && firstCreated>=DateTime(y,1,1)) || y==y_start
             push!(altidstime, [altId, firstCreated])
           end
@@ -223,18 +247,21 @@ for y in y_start:y_end
   uniquealtIdpairs = Set(altidstime)
   print("Set is set")
   # Structure the pairs + a take field to be ready to be inserted in the MongodDB collection
-  wholedic = []
   for elem in uniquealtIdpairs
     push!(wholedic, Dict("altId" => elem[1],"firstCreated" => elem[2],"takes" => []))
   end# for elem
   # Push those pairs to the MongoDB collection
-  for news in wholedic
-    insert(News, news)
-  end
+  # for news in wholedic
+  #   insert(News, news)
+  # end
 end #for y
+a = Set(wholedic)
+for news in a
+  insert(News, news)
+end
 
 # Create compound idexes on altId and timestamp
-command_simple(client, "NewsDB", Dict("createIndexes"=>"News",
+command_simple(client, "NewsDB", Dict("createIndexes"=>coll_name,
                                       "indexes"=>[Dict("key"=>Dict("altId"=>1, "firstCreated"=>1),
                                                        "name"=>"idStory",
                                                        "unique"=>1)]))
@@ -254,10 +281,16 @@ for y in 2017:2017
       toc()
       tic()
     end
-    if i>523312 && !(i in [523312, 523314, 523540, 523596, 523669, 523670, 523715, 523716, 523720, 523724, 523725, 523733, 523737, 523740, 523750, 523801, 523820, 523899, 524097, 524150, 524155, 524178, 524202, 524295, 524296, 524709, 525171, 525175, 525417, 525419, 525420, 525421, 525422, 525452, 526175, 954943, 954944, 954945])
-      if length(l)>6
-        if l[1:6]=="{\"guid"
-          if l[end]==','
+    # linestoexclude = [523312, 523314, 523540, 523596, 523669, 523670, 523715, 523716, 523720, 523724, 523725, 523733, 523737, 523740, 523750, 523801, 523820, 523899, 524097, 524150, 524155, 524178, 524202, 524295, 524296, 524709, 525171, 525175, 525417, 525419, 525420, 525421, 525422, 525452, 526175, 954943, 954944, 954945]
+    linestoexclude = [] #to comment
+    # maxline = 523312
+    maxline = 99999999 #to comment
+    # minline = 523312
+    minline = 99999999 #to comment
+    if i>minline && !(i in linestoexclude) && i<maxline
+      if length(l)>6 #make sure it is a take (i.e. there is enough info in the string)
+        if l[1:6]=="{\"guid" # make sure it starts as a take
+          if l[end]==',' # make sure it ends as a take
             updatePos, guIdexists, ntakes = nbTakes(JSON.parse(l[1:end-1])["data"])
             if ntakes == 0
               addCompleteTake(JSON.parse(l[1:end-1])["data"])
