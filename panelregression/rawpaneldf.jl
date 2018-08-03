@@ -148,35 +148,7 @@ function meanexclude(X, toexclude = 0)
   return mean(res)
 end
 
-function pastreturn(subdf, nbdays=10)
-  lastreturns = []
-  lastsents = []
-  lastEAD = []
-  for row in eachrow(subdf)
-    if length(lastreturns)==nbdays
-      lastreturns = shiftpush(lastreturns, row[:retadj])
-      lastsents = shiftpush(lastsents, row[:sent])
-      lastEAD = shiftpush(lastEAD, row[:EAD])
-      row[Symbol("ret$(nbdays)days")] = cumret(lastreturns)
-      row[Symbol("sent$(nbdays)days")] = meanexclude(lastsents)
-      row[Symbol("EAD$(nbdays)days")] = sum(lastEAD)
-    else
-      push!(lastreturns, row[:retadj])
-      push!(lastsents, row[:sent])
-      push!(lastEAD, row[:EAD])
-      if length(lastreturns)==nbdays
-        row[Symbol("ret$(nbdays)days")] = cumret(lastreturns)
-        row[Symbol("sent$(nbdays)days")] = meanexclude(lastsents)
-        row[Symbol("EAD$(nbdays)days")] = sum(lastEAD)
-      else
-        row[Symbol("ret$(nbdays)days")] = NaN
-        row[Symbol("sent$(nbdays)days")] = NaN
-        row[Symbol("EAD$(nbdays)days")] = NaN
-      end
-    end
-  end
-  return subdf
-end
+
 
 
 function isvalue(x)
