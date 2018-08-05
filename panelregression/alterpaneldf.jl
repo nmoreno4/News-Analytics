@@ -1,6 +1,6 @@
 module alterpaneldf
 
-using CSV, Missings
+using CSV, Missings, TimeSeries
 export lagvariables
 
 "Computes lag both of past values (-t) or future values (+t)"
@@ -71,6 +71,12 @@ function lagvariables(subdf)
         end
     end
     return subdf
+end #fun
+
+
+function timecompress(subdf)
+    TS = TimeArray(subdf[:date], Array{Float64}(subdf[:, 2:end]), [String(x) for x in names(subdf)][2:end])
+    
 end
 
 

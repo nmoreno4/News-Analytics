@@ -170,8 +170,8 @@ FF_factors[:hmlsent] = hmlsent
 CSV.write("/home/nicolas/Data/Intermediate/FF_sent.csv", FF_factors)
 
 using RCall, TimeSeries
-dates  = collect(Date(1999,1,1):Date(2000,12,31))
-mytime = TimeArray(dates, rand(length(dates),2))
+# dates  = collect(Date(1999,1,1):Date(2000,12,31))
+# mytime = TimeArray(dates, rand(length(dates),2))
 TS = TimeArray(FF_factors[:date], Array{Float64}(FF_factors[:, 2:end]), [String(x) for x in names(FF_factors)][2:end])
 TSbis = moving(mean, TS, 5)
 TSbis = when(TSbis, dayofweekofmonth, 1)
