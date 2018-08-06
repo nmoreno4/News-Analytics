@@ -1,13 +1,17 @@
 push!(LOAD_PATH, "$(pwd())/panelregression")
 using CSV, alterpaneldf, DataFrames
 
-windows = [-1,-2,-3,-4,-5,-10,-20,-60, 1, 2, 3, 5]
+windows = [-1,-2, -5,-20,-60, -120, 0, 1,2]
 lambda = 0.94
 ### Load panel df ###
-dftoloadname = "rawpanel1"
-df = CSV.read("/home/nicolas/Data/Intermediate/$(dftoloadname).csv", rows_for_type_detect=3737, rows = 300000)
+dftoloadname = "rawpanel5"
+df = CSV.read("/home/nicolas/Data/Intermediate/$(dftoloadname)_FF.csv", rows_for_type_detect=3737, rows = 1000000)
+df[:uid] = collect(zip(df[:permno], df[:td]))
+a = df[[:uid]]
+deleterows!(df, find(nonunique(a)))
+delete!(df, :uid)
 
-sort!(df, cols = [:permno, :td])
+sort!(df, [:permno, :td])
 
 function ewma(X, λ=lambda)
     res = Array{Float64,1}(length(X))
@@ -66,16 +70,86 @@ function tapers(fun::Function, data::AbstractVector{T}) where {T}
 
     return result
 end
+function isvalue(rankbm)
+    res = ones(size(rankbm,1))*NaN
+    i=0
+    for x in rankbm
+        i+=0
+        if x=="H"
+            res[i]=1
+        else
+            res[i]=0
+        end
+    end
+    print(i)
+    return res
+end
+function isgrowth(rankbm)
+    res = ones(size(rankbm,1))*NaN
+    i=0
+    for x in rankbm
+        i+=0
+        if x=="L"
+            res[i]=1
+        else
+            res[i]=0
+        end
+    end
+    return res
+end
+function isbig(rankbm)
+    res = ones(size(rankbm,1))*NaN
+    i=0
+    for x in rankbm
+        i+=0
+        if (x-floor(x))*10>3
+            res[i]=1
+        else
+            res[i]=0
+        end
+    end
+    return res
+end
+function ismedium(rankbm)
+    res = ones(size(rankbm,1))*NaN
+    i=0
+    print(length(rankbm))
+    for x in rankbm
+        i+=0
+        if x=="M"
+            res[i]=1
+        else
+            res[i]=0
+        end
+    end
+    return res
+end
 for d in windows
     if d<0
         df[Symbol("MA$(d)sent")] = NaN
         df[Symbol("EMA$(d)sent")] = NaN
+        df[Symbol("lagMA$(d)sent")] = NaN
         df[Symbol("SUM$(d)sent")] = NaN
         df[Symbol("agg$(d)ret")] = NaN
         df[Symbol("agg$(d)EAD")] = NaN
         df[Symbol("lag$(d)sent")] = NaN
         df[Symbol("lag$(d)ret")] = NaN
         df[Symbol("lag$(d)EAD")] = NaN
+        df[Symbol("MA$(d)VWvaluesent")] = NaN
+        df[Symbol("lag$(d)VWvaluesent")] = NaN
+        df[Symbol("lagMA$(d)VWvaluesent")] = NaN
+        df[Symbol("MA$(d)VWgrowthsent")] = NaN
+        df[Symbol("lag$(d)VWgrowthsent")] = NaN
+        df[Symbol("lagMA$(d)VWgrowthsent")] = NaN
+        df[Symbol("MA$(d)hmlsent")] = NaN
+        df[Symbol("lag$(d)hmlsent")] = NaN
+        df[Symbol("lagMA$(d)hmlsent")] = NaN
+    elseif d==0
+        df[Symbol("isgrowth")] = NaN
+        df[Symbol("isvalue")] = NaN
+        df[Symbol("ismedium")] = NaN
+        df[Symbol("ismall")] = NaN
+        # df[Symbol("isbig")] = NaN
     else
         df[Symbol("lag$(d)sent")] = NaN
         df[Symbol("lag$(d)ret")] = NaN
@@ -87,6 +161,7 @@ function runningvars(subdf, lags=windows)
         try
             if d<0
                 subdf[Symbol("MA$(d)sent")] = running(mean, subdf[:sent], abs(d)+1)
+                subdf[Symbol("lagMA$(d)sent")] = running(lagfct, subdf[Symbol("MA$(d)sent")], abs(d)+1)
                 subdf[Symbol("EMA$(d)sent")] = running(ewma, subdf[:sent], abs(d)+1)
                 subdf[Symbol("SUM$(d)sent")] = running(sum, subdf[:sent], abs(d)+1)
                 subdf[Symbol("agg$(d)ret")] = running(StatsBase.geomean, [0;subdf[:retadj]]+1, abs(d)+1)[2:end]-1
@@ -94,140 +169,168 @@ function runningvars(subdf, lags=windows)
                 subdf[Symbol("lag$(d)EAD")] = running(lagfct, subdf[:EAD], abs(d)+1)
                 subdf[Symbol("lag$(d)sent")] = running(lagfct, subdf[:sent], abs(d)+1)
                 subdf[Symbol("lag$(d)ret")] = running(lagfct, subdf[:retadj], abs(d)+1)
+                subdf[Symbol("MA$(d)VWvaluesent")] = running(mean, subdf[:VWvaluesent], abs(d)+1)
+                subdf[Symbol("lagMA$(d)VWvaluesent")] = running(lagfct, subdf[Symbol("MA$(d)VWvaluesent")], abs(d)+1)
+                subdf[Symbol("lag$(d)VWvaluesent")] = running(lagfct, subdf[:VWvaluesent], abs(d)+1)
+                subdf[Symbol("lag$(d)ret")] = running(lagfct, subdf[:retadj], abs(d)+1)
+                subdf[Symbol("MA$(d)VWgrowthsent")] = running(mean, subdf[:VWgrowthsent], abs(d)+1)
+                subdf[Symbol("lagMA$(d)VWgrowthsent")] = running(lagfct, subdf[Symbol("MA$(d)VWgrowthsent")], abs(d)+1)
+                subdf[Symbol("lag$(d)VWgrowthsent")] = running(lagfct, subdf[:VWgrowthsent], abs(d)+1)
+                subdf[Symbol("lag$(d)ret")] = running(lagfct, subdf[:retadj], abs(d)+1)
+                subdf[Symbol("MA$(d)hmlsent")] = running(mean, subdf[:hmlsent], abs(d)+1)
+                subdf[Symbol("lagMA$(d)hmlsent")] = running(lagfct, subdf[Symbol("MA$(d)hmlsent")], abs(d)+1)
+                subdf[Symbol("lag$(d)hmlsent")] = running(lagfct, subdf[:hmlsent], abs(d)+1)
+                subdf[Symbol("lag$(d)ret")] = running(lagfct, subdf[:retadj], abs(d)+1)
+                subdf[Symbol("agg$(d)mktrf")] = running(StatsBase.geomean, [0;subdf[:mktrf]]+1, abs(d)+1)[2:end]-1
+                subdf[Symbol("agg$(d)hml")] = running(StatsBase.geomean, [0;subdf[:hml]]+1, abs(d)+1)[2:end]-1
+                subdf[Symbol("agg$(d)smb")] = running(StatsBase.geomean, [0;subdf[:smb]]+1, abs(d)+1)[2:end]-1
+            elseif d==0
+                subdf[Symbol("isgrowth")] =  [if i=="L" 1 else 0 end for i in subdf[:rankbm]]
+                subdf[Symbol("isvalue")] =  [if i=="H" 1 else 0 end for i in subdf[:rankbm]]
+                subdf[Symbol("ismedium")] =  [if i=="M" 1 else 0 end for i in subdf[:rankbm]]
+                subdf[Symbol("isbig")] =  [if i=="B" 1 else 0 end for i in subdf[:ptf_5by5]]
             else
                 subdf[Symbol("lag$(d)EAD")] = running(lagfct, subdf[:EAD][end:-1:1], abs(d)+1)[end:-1:1]
                 subdf[Symbol("lag$(d)sent")] = running(lagfct, subdf[:sent][end:-1:1], abs(d)+1)[end:-1:1]
                 subdf[Symbol("lag$(d)ret")] = running(lagfct, subdf[:retadj][end:-1:1], abs(d)+1)[end:-1:1]
             end
-        catch
-            print(d)
+        catch err
+            # print(err)
         end
     end
 end
+print("Running it!")
 @time by(df, :permno, runningvars)
-df[[:permno, :td, :retadj, Symbol("lag$(-2)ret")]][40000:45000,:]
+newnames = Symbol[]
+for n in names(df)
+    newname = replace(String(n), "-", "_")
+    push!(newnames, Symbol(newname))
+end
+names!(df, newnames)
+sum(df[:isvalue])
+df[[:permno, :td, :retadj, Symbol("MA$(-60)VWvaluesent")]][40000:45000,:]
 CSV.write("/home/nicolas/Data/Intermediate/$(dftoloadname)_extended.csv", df)
 
-
-using RCall
-a = df[Symbol("agg$(1)ret")][1:50000]
-median(a)
-@rput a
-R"plot(a)"
-
-@time for subdf in groupby(df, :permno)
-    for d in [1,5,10]
-        subdf[Symbol("MA$(d)sent")] = running(mean, subdf[:sent], d)
-        subdf[Symbol("agg$(d)ret")] = running(StatsBase.geomean, [0;subdf[:retadj]]+1, d)[2:end]
-        subdf[Symbol("agg$(d)EAD")] = running(sum, subdf[:EAD], d)
-    end
-end
-
-# a = df[1:1400000,:]
-
-#Past lags
-val = -1
-df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-val = -2
-df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-val = -3
-df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-val = -5
-df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = -10
+#
+# using RCall
+# a = df[Symbol("agg$(1)ret")][1:50000]
+# median(a)
+# @rput a
+# R"plot(a)"
+#
+# @time for subdf in groupby(df, :permno)
+#     for d in [1,5,10]
+#         subdf[Symbol("MA$(d)sent")] = running(mean, subdf[:sent], d)
+#         subdf[Symbol("agg$(d)ret")] = running(StatsBase.geomean, [0;subdf[:retadj]]+1, d)[2:end]
+#         subdf[Symbol("agg$(d)EAD")] = running(sum, subdf[:EAD], d)
+#     end
+# end
+#
+# # a = df[1:1400000,:]
+#
+# #Past lags
+# val = -1
 # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = -20
+# val = -2
 # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = -60
+# val = -3
 # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-
-# Forward looking lags
-val = 1
-df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 2
+# val = -5
 # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 3
+# # val = -10
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = -20
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = -60
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+#
+# # Forward looking lags
+# val = 1
 # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 2
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 3
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 5
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 10
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 20
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 60
+# # df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+#
+# #Past aggregate
+# # val = 2
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 3
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # val = 5
-# df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 10
-# df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 10
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # val = 20
-# df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 60
-# df[Symbol("lag$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("lag$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-
-#Past aggregate
-# val = 2
 # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
 # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 3
-# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-val = 5
-df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 10
-# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-val = 20
-df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 60
-# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 120
-# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# val = 240
-# df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-# df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
-
-
-@time by(df, :permno, lagvariables) #35 sec per 100000
-
-FF_factors2 = CSV.read("/home/nicolas/Data/Intermediate/FF_sent.csv")
-FF_factors2[:td] = 0
-for row in eachrow(FF_factors2)
-    row[:td] = trading_day(dates, row[:date])
-end
-
-a = join(df, FF_factors2, on=:td, kind=:left)
-val = 1
-a[[Symbol("agg$(val)retadj"), :retadj]]
+# # val = 60
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 120
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # val = 240
+# # df[Symbol("agg$(val)retadj")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)sent")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+# # df[Symbol("agg$(val)EAD")] = Array{Union{Float64, Missings.Missing}}(ones(size(df,1))*val)
+#
+#
+# @time by(df, :permno, lagvariables) #35 sec per 100000
+#
+# FF_factors2 = CSV.read("/home/nicolas/Data/Intermediate/FF_sent.csv")
+# FF_factors2[:td] = 0
+# for row in eachrow(FF_factors2)
+#     row[:td] = trading_day(dates, row[:date])
+# end
+#
+# a = join(df, FF_factors2, on=:td, kind=:left)
+# val = 1
+# a[[Symbol("agg$(val)retadj"), :retadj]]

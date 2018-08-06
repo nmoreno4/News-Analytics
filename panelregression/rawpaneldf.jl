@@ -5,7 +5,7 @@ using Mongo, TimeZones, WRDSdownload, DataFrames, CSV
 import DFmanipulation: deletemissingrows!
 
 senttype = "sentClasRel"
-dftosavename = "rawpanel1"
+dftosavename = "rawpanel5"
 
 ### Load mongo client ###
 client = MongoClient()   # Defaults to MongoClient("localhost", 27017)
@@ -65,139 +65,139 @@ df = DataFrames.DataFrame(df)
 names!(df, [:permno, :td, :retadj, :sent, :newsday, :rankbm, :ptf_5by5, :EAD])
 CSV.write("/home/nicolas/Data/Intermediate/$(dftosavename).csv", df)
 
-
-
-df[:ret3days] = NaN
-df[:sent3days] = NaN
-df[:EAD3days] = NaN
-df[:ret5days] = NaN
-df[:sent5days] = NaN
-df[:EAD5days] = NaN
-df[:ret10days] = NaN
-df[:sent10days] = NaN
-df[:EAD10days] = NaN
-df[:ret20days] = NaN
-df[:sent20days] = NaN
-df[:EAD20days] = NaN
-df[:ret60days] = NaN
-df[:sent60days] = NaN
-df[:EAD60days] = NaN
-df[:tokeep3days] = NaN
-df[:tokeep5days] = NaN
-df[:tokeep10days] = NaN
-df[:tokeep20days] = NaN
-df[:tokeep60days] = NaN
-
-df = by(df, :permno, pastreturn)
-
-df10 = deletemissingrows!(deepcopy(df), :ret10days, "NaN")
-df5 = deletemissingrows!(deepcopy(df), :ret5days, "NaN")
-df3= deletemissingrows!(deepcopy(df), :ret3days, "NaN")
-
-by(df10, :permno, keeponeobsperiod)
-by(df5, :permno, keeponeobsperiod)
-by(df3, :permno, keeponeobsperiod)
-
-df10bis = deletemissingrows!(deepcopy(df), :tokeep10days, "NaN")
-df5bis = deletemissingrows!(deepcopy(df), :tokeep5days, "NaN")
-df3bis = deletemissingrows!(deepcopy(df), :tokeep3days, "NaN")
-
-df10[[:td, :permno, :sent, :ret10days, :sent10days, :EAD10days]][1:15,:]
-
-pastreturn(groupeddf[1], 3)[[:retadj, :ret3days]]
-
-function lagvariables(subdf)
-end
-
-function keeponeobsperiod(subdf, nbdays = 3)
-  i = 0
-  for row in eachrow(subdf)
-    i+=1
-    if (i-1)%nbdays == 0
-      row[Symbol("tokeep$(nbdays)days")] = 1
-    end
-  end
-  return subdf
-end
-
-function shiftpush(X,x)
-  shift!(X)
-  push!(X, x)
-  return X
-end
-
-function cumret(X)
-  start = 1
-  for x in X
-    start*=(1+x)
-  end
-  res = start - 1
-  return res
-end
-
-function meanexclude(X, toexclude = 0)
-  res = Float64[]
-  for x in X
-    if x!= toexclude
-      push!(res, x)
-    end
-  end
-  if length(res)==0
-    push!(res,0)
-  end
-  return mean(res)
-end
-
-
-
-
-function isvalue(x)
-  if x=="H"
-    return 1
-  else
-    return 0
-  end
-end
-
-function isgrowth(x)
-  if x=="L"
-    return 1
-  else
-    return 0
-  end
-end
-
-function issmall(x)
-  if floor(x)==1
-    return 1
-  else
-    return 0
-  end
-end
-
-
-df[:test] = collect(zip(df[:permid],df[:td]))
-Set(df[:test])
-df[:ones] = 1
-a = df[[:test, :ones]]
-a = find(nonunique(a))
-
-deleterows!(df, a)
-
-df[:isvalue] = map(isvalue, df[:rankbm])
-df[:isgrowth] = map(isgrowth, df[:rankbm])
-df[:issmall] = map(isgrowth, df[:rankbm])
-
-
-using RCall
-@rlibrary plm
-
-@rput df
-R"df <- as.data.frame(lapply(df, unlist))"
-R"E <- plm::pdata.frame(df, index = c('permid', 'td'), drop.index=TRUE, row.names=TRUE)"
-R"head(E)"
-
-R"model <- plm::plm(retadj~sent+sent*isvalue, data=E, model = 'within')"
-R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
-R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
-R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
+#
+#
+# df[:ret3days] = NaN
+# df[:sent3days] = NaN
+# df[:EAD3days] = NaN
+# df[:ret5days] = NaN
+# df[:sent5days] = NaN
+# df[:EAD5days] = NaN
+# df[:ret10days] = NaN
+# df[:sent10days] = NaN
+# df[:EAD10days] = NaN
+# df[:ret20days] = NaN
+# df[:sent20days] = NaN
+# df[:EAD20days] = NaN
+# df[:ret60days] = NaN
+# df[:sent60days] = NaN
+# df[:EAD60days] = NaN
+# df[:tokeep3days] = NaN
+# df[:tokeep5days] = NaN
+# df[:tokeep10days] = NaN
+# df[:tokeep20days] = NaN
+# df[:tokeep60days] = NaN
+#
+# df = by(df, :permno, pastreturn)
+#
+# df10 = deletemissingrows!(deepcopy(df), :ret10days, "NaN")
+# df5 = deletemissingrows!(deepcopy(df), :ret5days, "NaN")
+# df3= deletemissingrows!(deepcopy(df), :ret3days, "NaN")
+#
+# by(df10, :permno, keeponeobsperiod)
+# by(df5, :permno, keeponeobsperiod)
+# by(df3, :permno, keeponeobsperiod)
+#
+# df10bis = deletemissingrows!(deepcopy(df), :tokeep10days, "NaN")
+# df5bis = deletemissingrows!(deepcopy(df), :tokeep5days, "NaN")
+# df3bis = deletemissingrows!(deepcopy(df), :tokeep3days, "NaN")
+#
+# df10[[:td, :permno, :sent, :ret10days, :sent10days, :EAD10days]][1:15,:]
+#
+# pastreturn(groupeddf[1], 3)[[:retadj, :ret3days]]
+#
+# function lagvariables(subdf)
+# end
+#
+# function keeponeobsperiod(subdf, nbdays = 3)
+#   i = 0
+#   for row in eachrow(subdf)
+#     i+=1
+#     if (i-1)%nbdays == 0
+#       row[Symbol("tokeep$(nbdays)days")] = 1
+#     end
+#   end
+#   return subdf
+# end
+#
+# function shiftpush(X,x)
+#   shift!(X)
+#   push!(X, x)
+#   return X
+# end
+#
+# function cumret(X)
+#   start = 1
+#   for x in X
+#     start*=(1+x)
+#   end
+#   res = start - 1
+#   return res
+# end
+#
+# function meanexclude(X, toexclude = 0)
+#   res = Float64[]
+#   for x in X
+#     if x!= toexclude
+#       push!(res, x)
+#     end
+#   end
+#   if length(res)==0
+#     push!(res,0)
+#   end
+#   return mean(res)
+# end
+#
+#
+#
+#
+# function isvalue(x)
+#   if x=="H"
+#     return 1
+#   else
+#     return 0
+#   end
+# end
+#
+# function isgrowth(x)
+#   if x=="L"
+#     return 1
+#   else
+#     return 0
+#   end
+# end
+#
+# function issmall(x)
+#   if floor(x)==1
+#     return 1
+#   else
+#     return 0
+#   end
+# end
+#
+#
+# df[:test] = collect(zip(df[:permid],df[:td]))
+# Set(df[:test])
+# df[:ones] = 1
+# a = df[[:test, :ones]]
+# a = find(nonunique(a))
+#
+# deleterows!(df, a)
+#
+# df[:isvalue] = map(isvalue, df[:rankbm])
+# df[:isgrowth] = map(isgrowth, df[:rankbm])
+# df[:issmall] = map(isgrowth, df[:rankbm])
+#
+#
+# using RCall
+# @rlibrary plm
+#
+# @rput df
+# R"df <- as.data.frame(lapply(df, unlist))"
+# R"E <- plm::pdata.frame(df, index = c('permid', 'td'), drop.index=TRUE, row.names=TRUE)"
+# R"head(E)"
+#
+# R"model <- plm::plm(retadj~sent+sent*isvalue, data=E, model = 'within')"
+# R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
+# R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
+# R"model <- plm::plm(retadj~sent+sent*EAD, data=E)"
