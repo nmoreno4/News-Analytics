@@ -8,7 +8,7 @@ print("Data read!")
 oldnames = names(df)
 FFnames = names(aggsent)[[2:4;6:end]]
 df = Array{Any}(df)
-FF = Array{Any}(size(df,1), 10)
+FF = Array{Any}(size(df,1), 14)
 @time @inbounds for row in eachindex(df[:,2])
     td = df[row,2]-1
     FF[row,1] = aggsent[:mktrf][td]
@@ -21,5 +21,9 @@ FF = Array{Any}(size(df,1), 10)
     FF[row,8] = aggsent[:VWbigsent][td]
     FF[row,9] = aggsent[:smbsent][td]
     FF[row,10] = aggsent[:hmlsent][td]
+    FF[row,11] = aggsent[:valueret][td]
+    FF[row,12] = aggsent[:growthret][td]
+    FF[row,13] = aggsent[:smallret][td]
+    FF[row,14] = aggsent[:bigret][td]
 end
 CSV.write("/home/nicolas/Data/Intermediate/$(dftoloadname)_FF.csv", names!(DataFrame([df FF]), [oldnames; FFnames]))

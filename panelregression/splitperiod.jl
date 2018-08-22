@@ -29,7 +29,7 @@ function removetdrows(df, windowlength)
         a = DataFrames.DataFrame(a)
         deleterows!(a, toremove)
     end
-    b = by(df, :permno, removetdrows)
+    b = by(df, :permno, intermed_removetdrows)
     delete!(b, :permno)
     names!(b,names(df))
     return b

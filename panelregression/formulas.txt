@@ -1,0 +1,43 @@
+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+retadj~lag(retadj,1:5)+lag(mktrf,1:5)+lag(hml,1:5)+lag(umd,1:5)+lag(smb,1:5)+lag(sent,1:5)|lag(retadj,5:-1)|sent:EAD:isvalue
+retadj~lag(retadj,1:5)+lag(mktrf,1:5)+lag(hml,1:5)+lag(umd,1:5)+lag(smb,1:5)+lag(sent,1:5)|lag(retadj,5:-1)|sent:EAD:isvalue
+
+#check if the sentiment (or lagged) has a bigger impact on (or just after) EAD --> value
+retadj~sent*EAD*isvalue+sent*lag_1EAD*isvalue+sent*lag_2EAD+lag_1sent*isvalue*lag_1EAD+lag_2sent*isvalue*lag_2EAD+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+#check if the sentiment (or lagged) has a bigger impact on (or just after) EAD --> growth
+retadj~sent*EAD*isgrowth+sent*lag_1EAD*isgrowth+sent*lag_2EAD+lag_1sent*isgrowth*lag_1EAD+lag_2sent*isgrowth*lag_2EAD+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+#check if the sentiment (or lagged) has a bigger impact on (or just after) EAD or newsdays --> value
+retadj~sent*EAD*isvalue*newsday+sent*lag_1EAD*isvalue*lag_1newsday+sent*lag_2EAD*lag_2newsday+lag_1sent*isvalue*lag_1EAD*lag_1newsday+lag_2sent*isvalue*lag_2EAD*lag_2newsday+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+#check if the sentiment (or lagged) has a bigger impact on (or just after) EAD or newsdays --> growth
+retadj~sent*EAD*isgrowth*newsday+sent*lag_1EAD*isgrowth*lag_1newsday+sent*lag_2EAD*lag_2newsday+lag_1sent*isgrowth*lag_1EAD*lag_1newsday+lag_2sent*isgrowth*lag_2EAD*lag_2newsday+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+
+#check if the rolling sentiment (or lagged rolling) has a bigger impact on (or just after) EAD --> value
+retadj~MA_20sent*EAD*isvalue+MA_20sent*lag_1EAD*isvalue+MA_20sent*lag_2EAD+mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+#(bis) check if the rolling sentiment (or lagged rolling) has a bigger impact on (or just after) EAD --> value
+retadj~lagMA_20__2sent*EAD*isvalue+lagMA_20__1sent*EAD*isvalue+MA_20sent*EAD*isvalue
++lagMA_20__2sent*lag_1EAD*isvalue+lagMA_20__1sent*lag_1EAD*isvalue+MA_20sent*lag_1EAD*isvalue
++lagMA_20__2sent*lag_2EAD*isvalue+lagMA_20__1sent*lag_2EAD*isvalue+MA_20sent*lag_2EAD*isvalue
++mktrf+hml+smb+umd+lag_1ret+lag_2ret
+
+
+agg_20ret~MA_20sent+lagMA_20__1sent+lagMA_20__2sent+lagMA_20__3sent+lagMA_20__4sent+lagMA_20__5sent
+          +agg_20mktrf+agg_20hml+agg_20smb
+
+agg_20ret~MA_20sent+lagMA_20__1sent
++MA_20VWvaluesent+MA_20hmlsent
++lagMA_20__1VWvaluesent+lagMA_20__1hmlsent
++agg_20mktrf+agg_20hml+agg_20smb
+
+agg_20ret~MA_20sent+lagMA_20__1sent
++MA_20VWgrowthsent+MA_20hmlsent
++lagMA_20__1VWgrowthsent+lagMA_20__1hmlsent
++agg_20mktrf+agg_20hml+agg_20smb
+
+agg_5ret~MA_5sent+lagMA_5__1sent+MA_5VWvaluesent+MA_5hmlsent+lagMA_5__1VWvaluesent+lagMA_5__1hmlsent+agg_5mktrf+agg_5hml+agg_5smb
+
+agg_5ret~MA_5sent+lagMA_5__1sent+MA_5VWvaluesent+MA_5hmlsent+lagMA_5__1VWvaluesent+lagMA_5__1hmlsent+agg_5mktrf+agg_5hml+agg_5smb

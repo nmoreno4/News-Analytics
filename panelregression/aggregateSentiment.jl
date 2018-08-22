@@ -33,6 +33,15 @@ VWsmallsent = Float64[]
 VWbigsent = Float64[]
 EWsmallsent = Float64[]
 EWbigsent = Float64[]
+
+VWvalueret = Float64[]
+VWgrowthret = Float64[]
+EWvalueret = Float64[]
+EWgrowthret = Float64[]
+VWsmallret = Float64[]
+VWbigret = Float64[]
+EWsmallret = Float64[]
+EWbigret = Float64[]
 for td in 2:3777
   smallgrowthcursor = find(TRNAcoll,
     Dict("td"=>td, "ptf_2by3_size_value"=>"SL"))
@@ -108,6 +117,55 @@ for td in 2:3777
     push!(bigmedwport, entry["wport"])
   end
 
+
+  # smallvaluewport[findin(smallvalueret, excludezeroret)] = excludezeroret
+  # bigvaluewport[findin(bigvalueret, excludezeroret)] = excludezeroret
+  # filter!(e->e≠excludezeroret, smallvaluewport)
+  # filter!(e->e≠excludezeroret, bigvaluewport)
+  # filter!(e->e≠excludezeroret, bigvalueret)
+  # filter!(e->e≠excludezeroret, smallvalueret)
+  push!(VWvalueret, (sum((smallvaluewport.*smallvalueret)./sum(smallvaluewport))
+                    + sum((bigvaluewport.*bigvalueret)./sum(bigvaluewport)))
+                    / 2)
+  push!(EWvalueret, (mean(smallvalueret) + mean(bigvalueret))/2)
+
+  # smallgrowthwport[findin(smallgrowthret, excludezeroret)] = excludezeroret
+  # biggrowthwport[findin(biggrowthret, excludezeroret)] = excludezeroret
+  # filter!(e->e≠excludezeroret, smallgrowthwport)
+  # filter!(e->e≠excludezeroret, biggrowthwport)
+  # filter!(e->e≠excludezeroret, biggrowthret)
+  # filter!(e->e≠excludezeroret, smallgrowthret)
+  push!(VWgrowthret, (sum((smallgrowthwport.*smallgrowthret)./sum(smallgrowthwport))
+                    + sum((biggrowthwport.*biggrowthret)./sum(biggrowthwport)))
+                    / 2)
+  push!(EWgrowthret, (mean(smallgrowthret) + mean(biggrowthret))/2)
+
+
+  #size portfolios
+  # smallmedwport[findin(smallmedret, excludezeroret)] = excludezeroret
+  # bigmedwport[findin(bigmedret, excludezeroret)] = excludezeroret
+  # filter!(e->e≠excludezeroret, smallmedwport)
+  # filter!(e->e≠excludezeroret, bigmedwport)
+  # filter!(e->e≠excludezeroret, bigmedret)
+  # filter!(e->e≠excludezeroret, smallmedret)
+
+  push!(VWbigret, (sum((biggrowthwport.*biggrowthret)./sum(biggrowthwport))
+                    + sum((bigmedwport.*bigmedret)./sum(bigmedwport))
+                    + sum((bigvaluewport.*bigvalueret)./sum(bigvaluewport)))
+                    / 3)
+  push!(EWbigret, (mean(biggrowthret) + mean(bigmedret) + mean(bigvalueret))/3)
+
+  push!(VWsmallret, (sum((smallgrowthwport.*smallgrowthret)./sum(smallgrowthwport))
+                    + sum((smallmedwport.*smallmedret)./sum(smallmedwport))
+                    + sum((smallvaluewport.*smallvalueret)./sum(smallvaluewport)))
+                    / 3)
+  push!(EWsmallret, (mean(smallgrowthret) + mean(smallmedret) + mean(smallvalueret))/3)
+
+
+
+
+
+
   smallvaluewport[findin(smallvaluesent, excludezerosent)] = excludezerosent
   bigvaluewport[findin(bigvaluesent, excludezerosent)] = excludezerosent
   filter!(e->e≠excludezerosent, smallvaluewport)
@@ -151,6 +209,7 @@ for td in 2:3777
                     / 3)
   push!(EWsmallsent, (mean(smallgrowthsent) + mean(smallmedsent) + mean(smallvaluesent))/3)
 
+
 end
 
 mktrf = FF_factors[:mktrf]
@@ -166,6 +225,10 @@ FF_factors[:VWsmallsent] = VWsmallsent
 FF_factors[:VWbigsent] = VWbigsent
 FF_factors[:smbsent] = smbsent
 FF_factors[:hmlsent] = hmlsent
+FF_factors[:valueret] = VWvalueret
+FF_factors[:growthret] = VWgrowthret
+FF_factors[:smallret] = VWsmallret
+FF_factors[:bigret] = VWbigret
 
 CSV.write("/home/nicolas/Data/Intermediate/FF_sent.csv", FF_factors)
 
