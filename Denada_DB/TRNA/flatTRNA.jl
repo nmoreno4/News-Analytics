@@ -1,5 +1,6 @@
 using JSON, TimeZones, ArgParse, PyCall, Dates
 include("/home/nicolas/Code/News-Analytics/Denada_DB/TRNA/TRNAfcts.jl")
+y=2003
 
 #parse args
 s = ArgParseSettings()
@@ -10,7 +11,7 @@ s = ArgParseSettings()
         arg_type = Int
     "collection"
         help = "Mongo collection"
-        required = true
+        required = false
         default = "copystockdateflat2"
 end
 parsed_args = parse_args(s)
@@ -96,6 +97,8 @@ ResultDic = Dict()
                 push!(ResultDic[permid][td][sid]["neg"], item["data"]["analytics"]["analyticsScores"][1]["sentimentNegative"])
                 push!(ResultDic[permid][td][sid]["neut"], item["data"]["analytics"]["analyticsScores"][1]["sentimentNeutral"])
                 push!(ResultDic[permid][td][sid]["sentClas"], item["data"]["analytics"]["analyticsScores"][1]["sentimentClass"])
+                append!(ResultDic[permid][td][sid]["subjects"], item["data"]["newsItem"]["subjects"])
+                ResultDic[permid][td][sid]["subjects"] = collect(Set(ResultDic[permid][td][sid]["subjects"]))
             catch
                 ResultDic[permid][td][sid] = Dict(
                     "firstCreated"=>item["data"]["newsItem"]["metadata"]["firstCreated"],
@@ -141,74 +144,38 @@ end
 #     end
 # end
 
-for i in ResultDic[4295905573]
-    print(length(i))
-end
+# for i in ResultDic[4295905573]
+#     print(length(i))
+# end
 
+@time JLD2.@load "/home/nicolas/Data/Intermediate/testResultDic.jld2"
+
+@pyimport pymongo
+client = pymongo.MongoClient()
+db = client[:Denada]
+collection = db[:TRNA]
 p=[0]
-for permid in ResultDic
+myvars = ["pos", "neg", "neut", "sentClas", "subjects"]
+@time for permid in ResultDic
     p[1]+=1
-    # print("$p\n")
+    length(ResultDic)%p[1]==0 ? print("$(round(100*p[1]/length(ResultDic)))") :
     for td in permid[2]
-        pos = []
-        neg = []
-        sentClas = []
-        sentClasRel = []
-        posneg = []
-        posnegRel = []
-        posRel = []
-        negRel = []
-        subjects = []
-        vol24H = []
-        vol3D = []
-        vol7D = []
-        nov24H = []
-        nov3D = []
-        nov7D = []
-        for story in td[2]
-            subjects = story[2]["subjects"]
-            push!(vol24H, mean(story[2]["Vol24H"]))
-            push!(vol3D, mean(story[2]["Vol3D"]))
-            push!(vol7D, mean(story[2]["Vol7D"]))
-            push!(nov24H, mean(story[2]["Nov24H"]))
-            push!(nov3D, mean(story[2]["Nov3D"]))
-            push!(nov7D, mean(story[2]["Nov7D"]))
-            push!(pos, mean(story[2]["pos"]))
-            push!(neg, mean(story[2]["neg"]))
-            push!(posRel, mean(story[2]["pos"].*story[2]["relevance"]))
-            push!(negRel, mean(story[2]["neg"].*story[2]["relevance"]))
-            push!(posneg, mean(story[2]["pos"].-story[2]["neg"]))
-            push!(posnegRel, mean((story[2]["pos"].-story[2]["neg"]).*story[2]["relevance"]))
-            push!(sentClas, mean(story[2]["sentClas"]))
-            push!(sentClasRel, mean(story[2]["sentClas"].*story[2]["relevance"]))
+        tdstories = meansumtakes(td, myvars)
+        tdDic = Dict()
+        for var in myvars[1:end-1]
+            tdDic["$(var)_m"] = mean(tdstories["mean_$(var)"])
+            tdDic["$(var)_s"] = sum(tdstories["mean_$(var)"])
+            tdDic["rel_$(var)_m"] = mean(tdstories["mean_rel_$(var)"])
+            tdDic["rel_$(var)_s"] = sum(tdstories["mean_rel_$(var)"])
+            tdDic["novrel_$(var)_m"] = mean(tdstories["mean_novrel_$(var)"])
+            tdDic["novrel_$(var)_s"] = sum(tdstories["mean_novrel_$(var)"])
         end
-        # crtdate = story[2]["firstCreated"]
-        # td = (dates, crtdate)
-        if td[1]==1
-            tidx=2
-        else
-            tidx = td[1]
-        end
-        update(stockcoll,
-               Dict("permid"=>permid[1], "dailydate"=>Dict("\$gte"=> dates[tidx-1],"\$lt"=> dates[tidx])),
-               Dict("\$set"=>Dict("pos"=>mean(pos),
-                                  "td"=>tidx,
-                                  "nbstories"=>length(pos),
-                                  "posRel"=>mean(posRel),
-                                  "vol24H"=>mean(vol24H),
-                                  "vol3D"=>mean(vol3D),
-                                  "vol7D"=>mean(vol7D),
-                                  "nov24H"=>mean(nov24H),
-                                  "nov3D"=>mean(nov3D),
-                                  "nov7D"=>mean(nov7D),
-                                  "negRel"=>mean(negRel),
-                                  "subjects"=>subjects,
-                                  "sentClas"=>mean(sentClas),
-                                  "sentClasRel"=>mean(sentClasRel),
-                                  "posneg"=>mean(posneg),
-                                  "posnegRel"=>mean(posnegRel),
-                                  "neg"=>mean(neg)))
-                                  )
+        tdDic["nbStories"]=length(tdstories["mean_$(myvars[1])"])
+        tdDic["subjects"]=collect(Set(tdstories["subjects"]))
+        tdDic["permid"]=permid[1]
+        tdDic["td"]=td[1]
+        tdDic["date"]=dates[td[1]+1]
+        collection[:insert_one](tdDic)
     end
 end
 
