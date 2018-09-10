@@ -1,12 +1,12 @@
 using DataFrames, CSV, ShiftedArrays, Statistics, DataFramesMeta
-include("CRSP_CS/customfcts.jl")
+include("Denada_DB/WRDS/customfcts.jl")
 
 ##################################################################################################
 #%% Data for ratios
 ##################################################################################################
 CSdaterange = ["01/01/1999", "12/31/2017"]
 ratiovariables = "gvkey, datadate, fyr,  SEQ, ceq, TXDITC, TXDB, ITCB, PSTKRV, PSTKL, PSTK,
-                prcc_f, prcc_f, csho, epsfx, epsfi, oprepsx, opeps, ajex, ebit,
+                prcc_f, prcc_c, csho, epsfx, epsfi, oprepsx, opeps, ajex, ebit,
                 spi, nopi, sale, ibadj, dvc, dvp, ib, oibdp, dp, oiadp,
                 gp, revt, cogs, pi, ibc, dpc, at, ni, ibcom, icapt,
                 mib, ebitda, xsga, xido, xint, mii, ppent, act, lct,
@@ -18,7 +18,7 @@ vars_ytd=["sale", "dp", "capx", "cogs", "xido", "xint", "xopr", "ni", "pi", "oib
 @time begin
     print("Downloading annual CS\n")
     # Download Compustat data from server
-    annualratios = CSdownload(CSdaterange, ratiovariables, "compa.aco_indsta")
+    annualratios = CSdownload(CSdaterange, ratiovariables, "compa.funda")
     # sort!(CSdf, [:gvkey,:datadate])
     # CSdf[:gvkey] = parse.(Int, CSdf[:gvkey]);
     print("Downloading annual CS has taken")
