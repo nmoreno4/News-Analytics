@@ -56,7 +56,7 @@ aggvars = ["pos", "neg", "neut", "sentClas", "spread"]
 datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
 
 
-for y in 2006
+for y in 2011:2015
     for i in 1:10
 
         ResultDic = Dict()
