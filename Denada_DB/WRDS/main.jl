@@ -1,7 +1,7 @@
 ##################################################################################################
 #%% Load modules and Path
 ##################################################################################################
-using ShiftedArrays, DataFrames, Dates, DataFramesMeta, CSV, StatsBase, Statistics, RollingFunctions
+using ShiftedArrays, DataFrames, Dates, DataFramesMeta, CSV, StatsBase, Statistics, RollingFunctions, JLD2
 
 include("Denada_DB/WRDS/customfcts.jl")
 include("Denada_DB/WRDS/breakpoints.jl")
@@ -29,7 +29,7 @@ end
 #%% CS treatment
 ##################################################################################################
 #%% Download CS data
-@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable)
+@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable, "/mnt/Data/Inputs/sectors.csv")
 
 @time CSdf = CS_age!(CSdf)
 #Keep only stocks having at least two years of history in compustat database
@@ -101,7 +101,7 @@ linkinbounds = Array{Bool}(replace(linkinbounds, missing=>false));
 CS_ccm = CS_ccm[linkinbounds, :]
 
 # match gvkey with permID
-CS_ccm = gvkeyMatchPermID!(CS_ccm)
+CS_ccm = gvkeyMatchPermID!(CS_ccm, "/mnt/Data/Inputs/permidmatch/matched.csv")
 
 # merge june CRSP with Compustat. This is to compute the breakpoints.
 june_merge = join(CRSPdf_jun_me, CS_ccm, kind=:inner, on=[:permno, :jdate]);
@@ -171,9 +171,9 @@ monthly_merge[:date] = DateTime.(monthly_merge[:date]);
 
 
 # Load S&P500 return
-SP500m = CSV.read("/home/nicolas/Data/Inputs/monthlySP500.csv");
+SP500m = CSV.read("/mnt/Data/Inputs/monthlySP500.csv");
 SP500m[:caldt] = Dates.Date.(map(x->replace(x, "/"=>"-"), SP500m[:caldt]));
-SP500d = CSV.read("/home/nicolas/Data/Inputs/dailySP500.csv");
+SP500d = CSV.read("/mnt/Data/Inputs/dailySP500.csv");
 SP500d[:caldt] = Dates.Date.(map(x->replace(x, "/"=>"-"), SP500d[:caldt]));
 @time SP500m = @byrow! SP500m begin
     @newcol yearmonth::Array{Int}
@@ -192,28 +192,30 @@ decayw = [𝛷^t for t in 0:11]
         DataFrame(exretavg = Array{Union{Missing, Float64}}(missing, length(df[:exret])))
     end
 end
+monthly_merge[:exretavg] = prov[:exretavg]
 
 
-using PyCall
-@pyimport pymongo
-@pyimport datetime
-client = pymongo.MongoClient()
-db = client[:Denada]
-collection = db[:monthly_CRSP_CS]
-p=[0]
-@time for row in eachrow(monthly_merge)
-    insertDic = Dict{String,Any}()
-    for var in variablestokeep
-        if !ismissing(row[var])
-            insertDic[String(var)] = row[var]
-        else
-            insertDic[String(var)] = NaN
-        end
-    end
-    collection[:insert_one](insertDic)
-end;
-insertDic = Dict{String,Any}()
-insertDic["a"] = PyObject(NaN)
+# using PyCall
+# @pyimport pymongo
+# @pyimport datetime
+# client = pymongo.MongoClient()
+# db = client[:Denada]
+# collection = db[:monthly_CRSP_CS]
+# p=[0]
+# @time for row in eachrow(monthly_merge)
+#     insertDic = Dict{String,Any}()
+#     for var in variablestokeep
+#         if !ismissing(row[var])
+#             insertDic[String(var)] = row[var]
+#         else
+#             insertDic[String(var)] = nothing
+#         end
+#     end
+#     collection[:insert_one](insertDic)
+# end;
+# insertDic = Dict{String,Any}()
+# insertDic["a"] = PyObject(NaN)
+
 
 #######################
 #      Daily data     #
@@ -244,7 +246,7 @@ names!(CRSPdf, [:yearmonth, :permno, :dailyretadj, :dailydate, :dailyvol, :daily
 dailyDF = @time join(CRSPdf, monthly_merge, kind=:left, on=[:yearmonth, :permno])
 
 
-JLD2.@load "/home/nicolas/Data/Inputs/dates.jld2"
+JLD2.@load "/mnt/Data/Inputs/dates.jld2"
 @time dailyDF = @byrow! dailyDF begin
     @newcol td::Array{Int}
     :td = trading_day(dates, :dailydate)
@@ -254,7 +256,7 @@ dupind = @time nonunique(dailyDF[[:permno, :td]])
 popfirst!(dupind)
 push!(dupind, false)
 dupind = map(x->invertbool(x), dupind)
-dailyDF = dailyDF[dupind,:]
+@time dailyDF = dailyDF[dupind,:]
 
 dailyDF[:dailydate] = DateTime.(dailyDF[:dailydate]);
 
@@ -263,7 +265,7 @@ using PyCall
 @pyimport datetime
 client = pymongo.MongoClient()
 db = client[:Denada]
-collection = db[:daily_CRSP_CS_1]
+collection = db[:daily_CRSP_CS_TRNA]
 p=[0]
 @time for row in eachrow(dailyDF)
     insertDic = Dict{String,Any}()
@@ -271,7 +273,7 @@ p=[0]
         if !ismissing(row[var])
             insertDic[String(var)] = row[var]
         else
-            insertDic[String(var)] = NaN
+            insertDic[String(var)] = nothing
         end
     end
     collection[:insert_one](insertDic)
