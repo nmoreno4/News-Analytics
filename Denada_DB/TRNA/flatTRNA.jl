@@ -1,6 +1,7 @@
 using JSON, TimeZones, ArgParse, PyCall, Dates, Statistics, JLD2
-include("/home/nicolas/Code/News-Analytics/Denada_DB/TRNA/TRNAfcts.jl")
-include("/home/nicolas/Code/News-Analytics/Denada_DB/WRDS/WRDSdownload.jl")
+laptop = "/home/nicolas/News-Analytics"
+include("$(laptop)/Denada_DB/TRNA/TRNAfcts.jl")
+include("$(laptop)/Denada_DB/WRDS/WRDSdownload.jl")
 y=2003
 method = "complete"
 
@@ -26,6 +27,7 @@ y_start = 2003
 y_end = 2017
 # Path to the raw data. The @ will be replaced below with the approriate year to retrieve the correct file. Check the 40060090 in case it has changed from the source.
 datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
+datapath = "/run/media/nicolas/OtherData/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
 
 
 #get all trading days

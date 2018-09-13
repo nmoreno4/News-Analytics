@@ -29,7 +29,7 @@ end
 #%% CS treatment
 ##################################################################################################
 #%% Download CS data
-@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable, "/mnt/Data/Inputs/sectors.csv")
+@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable, "/run/media/nicolas/Data/Inputs/sectors.csv")
 
 @time CSdf = CS_age!(CSdf)
 #Keep only stocks having at least two years of history in compustat database
@@ -101,7 +101,7 @@ linkinbounds = Array{Bool}(replace(linkinbounds, missing=>false));
 CS_ccm = CS_ccm[linkinbounds, :]
 
 # match gvkey with permID
-CS_ccm = gvkeyMatchPermID!(CS_ccm, "/mnt/Data/Inputs/permidmatch/matched.csv")
+CS_ccm = gvkeyMatchPermID!(CS_ccm, "/run/media/nicolas/Data/Inputs/permidmatch/matched.csv")
 
 # merge june CRSP with Compustat. This is to compute the breakpoints.
 june_merge = join(CRSPdf_jun_me, CS_ccm, kind=:inner, on=[:permno, :jdate]);
@@ -171,9 +171,9 @@ monthly_merge[:date] = DateTime.(monthly_merge[:date]);
 
 
 # Load S&P500 return
-SP500m = CSV.read("/mnt/Data/Inputs/monthlySP500.csv");
+SP500m = CSV.read("/run/media/nicolas/Data/Inputs/monthlySP500.csv");
 SP500m[:caldt] = Dates.Date.(map(x->replace(x, "/"=>"-"), SP500m[:caldt]));
-SP500d = CSV.read("/mnt/Data/Inputs/dailySP500.csv");
+SP500d = CSV.read("/run/media/nicolas/Data/Inputs/dailySP500.csv");
 SP500d[:caldt] = Dates.Date.(map(x->replace(x, "/"=>"-"), SP500d[:caldt]));
 @time SP500m = @byrow! SP500m begin
     @newcol yearmonth::Array{Int}
@@ -246,7 +246,7 @@ names!(CRSPdf, [:yearmonth, :permno, :dailyretadj, :dailydate, :dailyvol, :daily
 dailyDF = @time join(CRSPdf, monthly_merge, kind=:left, on=[:yearmonth, :permno])
 
 
-JLD2.@load "/mnt/Data/Inputs/dates.jld2"
+JLD2.@load "/run/media/nicolas/Data/Inputs/dates.jld2"
 @time dailyDF = @byrow! dailyDF begin
     @newcol td::Array{Int}
     :td = trading_day(dates, :dailydate)
