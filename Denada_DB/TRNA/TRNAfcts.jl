@@ -36,7 +36,7 @@ function rowmat2array(X)
 end
 
 
-function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subjects"])
+function meansumtakes_OLD(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subjects"])
     dicvars = [myvars; ["rel_$(var)" for var in myvars[1:end-1]]; ["novrel_$(var)" for var in myvars[1:end-1]]]
     storyvec =  Dict{String, Any}(zip(dicvars, [[] for x in dicvars]))
     storyvec["storyID"] = []
@@ -62,6 +62,128 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
             storyvec["sum_$(storykeys[i])"] = Float64[sum(vec) for vec in storyvec[storykeys[i]]]
         end
     end
+    return storyvec
+end
+
+
+function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subjects"], relthresh=90, novspan="3D")
+    dicvars = [myvars; ["$(var)_merger" for var in myvars[1:end-1]]; ["$(var)_res" for var in myvars[1:end-1]];
+                ["$(var)_rel$(relthresh)" for var in myvars[1:end-1]]; ["$(var)_rel$(relthresh)nov$(novspan)" for var in myvars[1:end-1]];
+                ["$(var)_nov$(novspan)" for var in myvars[1:end-1]]; ["rel_$(var)" for var in myvars[1:end-1]];
+                ["novrel_$(var)" for var in myvars[1:end-1]]]
+    storyvec =  Dict{String, Any}(zip(dicvars, [[] for x in dicvars]))
+    storyvec["storyID"] = String[]
+    storyvec["novrel_spread"], storyvec["rel_spread"], storyvec["spread"] = [], [], []
+    storyvec["spread_merger"], storyvec["spread_res"] = [], []
+    storyvec["spread_rel$(relthresh)nov$(novspan)"], storyvec["spread_rel$(relthresh)"], storyvec["spread_nov$(novspan)"] = [], [], []
+    dzielinski = Float64[]
+    for story in tdnews[2]
+        relidx = Int[]
+        novidx = Int[]
+        mergeridx = Int[]
+        resultidx = Int[]
+        for i in 1:length(story[2]["relevance"])
+            if story[2]["relevance"][i]>relthresh/100
+                push!(relidx, i)
+            end
+            if story[2]["Nov$(novspan)"][i]==0
+                push!(novidx, i)
+            end
+            if "N2:RES" in story[2]["subjects"][i]
+                push!(resultidx, i)
+            end
+            if "N2:MRG" in story[2]["subjects"][i]
+                push!(mergeridx, i)
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(dzielinski, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(dzielinski, -1*story[2]["neg"][i])
+            end
+        end
+        relnovidx = intersect(relidx, novidx)
+        #
+        push!(storyvec["novrel_spread"],spread.(rowmat2array([story[2]["pos"]';story[2]["neut"]';story[2]["neg"]']')).*story[2]["relevance"].*exppen.(story[2]["Nov24H"]))
+        push!(storyvec["rel_spread"],spread.(rowmat2array([story[2]["pos"]';story[2]["neut"]';story[2]["neg"]']')).*story[2]["relevance"])
+        push!(storyvec["spread"],spread.(rowmat2array([story[2]["pos"]';story[2]["neut"]';story[2]["neg"]']')))
+        if length(relnovidx)>0
+            push!(storyvec["spread_rel$(relthresh)nov$(novspan)"],spread.(rowmat2array([story[2]["pos"][relnovidx]';story[2]["neut"][relnovidx]';story[2]["neg"][relnovidx]']')))
+        end
+        if length(relidx)>0
+            push!(storyvec["spread_rel$(relthresh)"],spread.(rowmat2array([story[2]["pos"][relidx]';story[2]["neut"][relidx]';story[2]["neg"][relidx]']')))
+        end
+        if length(novidx)>0
+            push!(storyvec["spread_nov$(novspan)"],spread.(rowmat2array([story[2]["pos"][novidx]';story[2]["neut"][novidx]';story[2]["neg"][novidx]']')))
+        end
+        if length(mergeridx)>0
+            push!(storyvec["spread_merger"],spread.(rowmat2array([story[2]["pos"][mergeridx]';story[2]["neut"][mergeridx]';story[2]["neg"][mergeridx]']')))
+        end
+        if length(resultidx)>0
+            push!(storyvec["spread_res"],spread.(rowmat2array([story[2]["pos"][resultidx]';story[2]["neut"][resultidx]';story[2]["neg"][resultidx]']')))
+        end
+        push!(storyvec["subjects"],collect(Set(collect(Base.Iterators.Flatten(story[2]["subjects"])))))
+        push!(storyvec["storyID"],story[1])
+        for var in myvars
+            if var != "subjects" && var != "spread_rel$(relthresh)nov$(novspan)" && var != "spread_rel$(relthresh)" && var != "spread_nov$(novspan)"
+                push!(storyvec["$(var)"],story[2]["$(var)"])
+                push!(storyvec["rel_$(var)"],story[2]["$(var)"].*story[2]["relevance"])
+                push!(storyvec["novrel_$(var)"],story[2]["$(var)"].*story[2]["relevance"].*exppen.(story[2]["Nov24H"]))
+                if length(relnovidx)>0
+                    push!(storyvec["$(var)_rel$(relthresh)nov$(novspan)"],story[2]["$(var)"][relnovidx])
+                end
+                if length(relidx)>0
+                    push!(storyvec["$(var)_rel$(relthresh)"],story[2]["$(var)"][relidx])
+                end
+                if length(novidx)>0
+                    push!(storyvec["$(var)_nov$(novspan)"],story[2]["$(var)"][novidx])
+                end
+                if length(mergeridx)>0
+                    push!(storyvec["$(var)_merger"],story[2]["$(var)"][mergeridx])
+                end
+                if length(resultidx)>0
+                    push!(storyvec["$(var)_res"],story[2]["$(var)"][resultidx])
+                end
+            end
+        end
+    end
+    if length(storyvec["spread_rel$(relthresh)"])==0
+        for var in myvars
+            delete!(storyvec, "$(var)_rel$(relthresh)")
+        end
+        delete!(storyvec, "spread_rel$(relthresh)")
+    end
+    if length(storyvec["spread_nov$(novspan)"])==0
+        for var in myvars
+            delete!(storyvec, "$(var)_nov$(novspan)")
+        end
+        delete!(storyvec, "spread_nov$(novspan)")
+    end
+    if length(storyvec["spread_rel$(relthresh)nov$(novspan)"])==0
+        for var in myvars
+            delete!(storyvec, "$(var)_rel$(relthresh)nov$(novspan)")
+        end
+        delete!(storyvec, "spread_rel$(relthresh)nov$(novspan)")
+    end
+    if length(storyvec["spread_merger"])==0
+        for var in myvars
+            delete!(storyvec, "$(var)_merger")
+        end
+        delete!(storyvec, "spread_merger")
+    end
+    if length(storyvec["spread_res"])==0
+        for var in myvars
+            delete!(storyvec, "$(var)_res")
+        end
+        delete!(storyvec, "spread_res")
+    end
+    storykeys = collect(keys(storyvec))
+    for i in 1:length(storykeys)
+        if storykeys[i] != "subjects" && storykeys[i] != "storyID"
+            storyvec["mean_$(storykeys[i])"] = Float64[mean(vec) for vec in storyvec[storykeys[i]] if length(vec)>0]
+            storyvec["sum_$(storykeys[i])"] = Float64[sum(vec) for vec in storyvec[storykeys[i]] if length(vec)>0]
+        end
+    end
+    storyvec["dzielinski_rel$(relthresh)nov$(novspan)"] = sum(dzielinski)/length(dzielinski)
     return storyvec
 end
 

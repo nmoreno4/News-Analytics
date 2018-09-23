@@ -3,7 +3,9 @@ laptop = "/home/nicolas/News-Analytics"
 include("$(laptop)/Denada_DB/TRNA/TRNAfcts.jl")
 include("$(laptop)/Denada_DB/WRDS/WRDSdownload.jl")
 y=2003
-method = "complete"
+method = "dictlike"
+relthresh = 50
+novspan = "3D"
 
 #parse args
 # s = ArgParseSettings()
@@ -52,23 +54,31 @@ end
 @pyimport pymongo
 client = pymongo.MongoClient()
 db = client[:Denada]
-collection = db[Symbol("daily_CRSP_CS_1")]
+collection = db[Symbol("daily_CRSP_CS_TRNA")]
 myvars = ["pos", "neg", "neut", "sentClas", "subjects"]
 aggvars = ["pos", "neg", "neut", "sentClas", "spread"]
-datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
+# collection = db[:test]
+# collection[:insert_one](ResultDic[4295860884][87])
 
 
-for y in 2011:2015
-    for i in 1:10
+for y in 2017
+    ispan = 1:10
+    if y == 2017
+        ispan = 2:10
+    end
+    for i in ispan
 
         ResultDic = Dict()
         permidslostinoblivion = []
 
-        if y>=2006
+        @time if y>=2006
             JLD2.@load "/run/media/nicolas/Research/Data/Intermediate/splitDic/Dic_$(y)_p$(i).jld2" partDic
             ResultDic = partDic
             print("Dic_$(y)_p$(i).jld2 loaded")
         else
+            if i>1
+                break
+            end
             @time partDic = JSON.parsefile(replace(datapath, "@"=>y))["Items"]
             @time for i in 1:length(partDic)
                 item = partDic[i]
@@ -134,67 +144,58 @@ for y in 2011:2015
         end
 
         pcount = [0]
-        if method == "means"
-            @time for permid in ResultDic
-              # round(length(ResultDic)/p[1])%10==0 ? print("Stored $(round(100*p[1]/length(ResultDic))) %") :
-                for td in permid[2]
-                    tdstories = meansumtakes(td, myvars)
-                    tdDic = Dict()
-                    for var in aggvars
-                        tdDic["$(var)_m"] = mean(tdstories["mean_$(var)"])
-                        tdDic["$(var)_s"] = sum(tdstories["mean_$(var)"])
-                        tdDic["rel_$(var)_m"] = mean(tdstories["mean_rel_$(var)"])
-                        tdDic["rel_$(var)_s"] = sum(tdstories["mean_rel_$(var)"])
-                        tdDic["novrel_$(var)_m"] = mean(tdstories["mean_novrel_$(var)"])
-                        tdDic["novrel_$(var)_s"] = sum(tdstories["mean_novrel_$(var)"])
-                    end
-                    tdDic["nbStories"]=length(tdstories["mean_$(myvars[1])"])
-                    tdDic["subjects"]=collect(Set(tdstories["subjects"]))
-                    tdDic["permid"]=permid[1]
-                    tdDic["td"]=td[1]
-                    if td[1]<length(dates)
-                        tdDic["date"]=dates[td[1]+1]
-                        collection[:insert_one](tdDic)
+        @time for permid in ResultDic
+            pcount[1]+=1
+            print("$(pcount[1])-$(permid[1])-")
+          # round(length(ResultDic)/p[1])%10==0 ? print("Stored $(round(100*p[1]/length(ResultDic))) %") :
+            for td in permid[2]
+                tdstories = meansumtakes(td, myvars, relthresh, novspan)
+                for pair in tdstories
+                    if pair[1] == "dzielinski_rel$(relthresh)nov$(novspan)"
+                        tdstories[pair[1]] = pair[2]
+                    elseif pair[1] == "storyID"
+                        tdstories[pair[1]] = tuple(pair[2]...)
+                    elseif typeof(pair[2])!=Vector{Float64}
+                        tdstories[pair[1]] = tuplerize(pair[2])
+                        tdstories[pair[1]] = tuple(tdstories[pair[1]]...)
+                    else
+                        tdstories[pair[1]] = tuple(pair[2]...)
                     end
                 end
-            end
-        elseif method == "complete"
-            @time for permid in ResultDic
-                pcount[1]+=1
-                print("$(pcount[1])-")
-              # round(length(ResultDic)/p[1])%10==0 ? print("Stored $(round(100*p[1]/length(ResultDic))) %") :
-                for td in permid[2]
-                    tdstories = meansumtakes(td, myvars)
-                    for pair in tdstories
-                        if pair[1] == "storyID"
-                            tdstories[pair[1]] = tuple(pair[2]...)
-                        elseif typeof(pair[2])!=Vector{Float64}
-                            tdstories[pair[1]] = tuplerize(pair[2])
-                            tdstories[pair[1]] = tuple(tdstories[pair[1]]...)
-                        else
-                            tdstories[pair[1]] = tuple(pair[2]...)
-                        end
+                for var in aggvars
+                    tdstories["$(var)_m"] = mean(tdstories["mean_$(var)"])
+                    tdstories["$(var)_s"] = sum(tdstories["mean_$(var)"])
+                    tdstories["rel_$(var)_m"] = mean(tdstories["mean_rel_$(var)"])
+                    tdstories["rel_$(var)_s"] = sum(tdstories["mean_rel_$(var)"])
+                    tdstories["novrel_$(var)_m"] = mean(tdstories["mean_novrel_$(var)"])
+                    tdstories["novrel_$(var)_s"] = sum(tdstories["mean_novrel_$(var)"])
+                    # print("\n $(tdstories["mean_$(var)_rel$(relthresh)nov$(novspan)"])")
+                    # print("\n $( mean(tdstories["mean_$(var)_rel$(relthresh)nov$(novspan)"]))")
+                    if haskey(tdstories, "mean_$(var)_rel$(relthresh)")
+                        tdstories["$(var)_rel$(relthresh)_m"] = mean(tdstories["mean_$(var)_rel$(relthresh)"])
+                        tdstories["$(var)_rel$(relthresh)_s"] = sum(tdstories["mean_$(var)_rel$(relthresh)"])
                     end
-                    for var in aggvars
-                        tdstories["$(var)_m"] = mean(tdstories["mean_$(var)"])
-                        tdstories["$(var)_s"] = sum(tdstories["mean_$(var)"])
-                        tdstories["rel_$(var)_m"] = mean(tdstories["mean_rel_$(var)"])
-                        tdstories["rel_$(var)_s"] = sum(tdstories["mean_rel_$(var)"])
-                        tdstories["novrel_$(var)_m"] = mean(tdstories["mean_novrel_$(var)"])
-                        tdstories["novrel_$(var)_s"] = sum(tdstories["mean_novrel_$(var)"])
+                    if haskey(tdstories, "mean_$(var)_rel$(relthresh)nov$(novspan)")
+                        tdstories["$(var)_rel$(relthresh)nov$(novspan)_m"] = mean(tdstories["mean_$(var)_rel$(relthresh)nov$(novspan)"])
+                        tdstories["$(var)_rel$(relthresh)nov$(novspan)_s"] = sum(tdstories["mean_$(var)_rel$(relthresh)nov$(novspan)"])
                     end
-                    tdstories["nbStories"]=length(tdstories["pos"])
-                    # tdstories["permid"]=permid[1]
-                    # tdstories["td"]=td[1]
-                    if td[1]<length(dates)
-                        tdstories["date"]=dates[td[1]+1]
-                        collection[:update_one](
-                                Dict("\$and"=> [
-                                                Dict("permid"=>permid[1]),
-                                                Dict("td"=> td[1])
-                                                ]),
-                                Dict("\$set"=>tdstories))
+                    if haskey(tdstories, "mean_$(var)_nov$(novspan)")
+                        tdstories["$(var)_nov$(novspan)_m"] = mean(tdstories["mean_$(var)_nov$(novspan)"])
+                        tdstories["$(var)_nov$(novspan)_s"] = sum(tdstories["mean_$(var)_nov$(novspan)"])
                     end
+                end
+                tdstories["nbStories"]=length(tdstories["pos"])
+                tdstories["rawStories"]=td[2]
+                # tdstories["permid"]=permid[1]
+                # tdstories["td"]=td[1]
+                if td[1]<length(dates)
+                    tdstories["date"]=dates[td[1]+1]
+                    collection[:update_one](
+                            Dict("\$and"=> [
+                                            Dict("permid"=>permid[1]),
+                                            Dict("td"=> td[1])
+                                            ]),
+                            Dict("\$set"=>tdstories))
                 end
             end
         end
