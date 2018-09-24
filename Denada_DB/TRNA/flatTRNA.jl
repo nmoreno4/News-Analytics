@@ -5,7 +5,7 @@ include("$(laptop)/Denada_DB/WRDS/WRDSdownload.jl")
 y=2003
 method = "dictlike"
 relthresh = 50
-novspan = "3D"
+novspan = "24H"
 
 #parse args
 # s = ArgParseSettings()
@@ -56,14 +56,21 @@ client = pymongo.MongoClient()
 db = client[:Denada]
 collection = db[Symbol("daily_CRSP_CS_TRNA")]
 myvars = ["pos", "neg", "neut", "sentClas", "subjects"]
+
+####!!!####
+#Re-decomment!!!#
+####!!!####
 aggvars = ["pos", "neg", "neut", "sentClas", "spread"]
+aggvars = []
+
+
 # collection = db[:test]
 # collection[:insert_one](ResultDic[4295860884][87])
 
 
-for y in 2017
+for y in 2003:2005
     ispan = 1:10
-    if y == 2017
+    if y == 2020
         ispan = 2:10
     end
     for i in ispan
@@ -149,9 +156,10 @@ for y in 2017
             print("$(pcount[1])-$(permid[1])-")
           # round(length(ResultDic)/p[1])%10==0 ? print("Stored $(round(100*p[1]/length(ResultDic))) %") :
             for td in permid[2]
-                tdstories = meansumtakes(td, myvars, relthresh, novspan)
+                # tdstories = meansumtakes(td, myvars, relthresh, novspan)
+                tdstories = dzielinskionly(td, myvars, relthresh, novspan)
                 for pair in tdstories
-                    if pair[1] == "dzielinski_rel$(relthresh)nov$(novspan)"
+                    if pair[1][1:3] == "dzi"
                         tdstories[pair[1]] = pair[2]
                     elseif pair[1] == "storyID"
                         tdstories[pair[1]] = tuple(pair[2]...)
@@ -184,7 +192,7 @@ for y in 2017
                         tdstories["$(var)_nov$(novspan)_s"] = sum(tdstories["mean_$(var)_nov$(novspan)"])
                     end
                 end
-                tdstories["nbStories"]=length(tdstories["pos"])
+                tdstories["nbStories"]=length(tdstories["dzielinski_nov$(novspan)"])
                 tdstories["rawStories"]=td[2]
                 # tdstories["permid"]=permid[1]
                 # tdstories["td"]=td[1]

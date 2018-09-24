@@ -85,6 +85,7 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
         novidx = Int[]
         mergeridx = Int[]
         resultidx = Int[]
+        crtstorydzielinski = Float64[]
         for i in 1:length(story[2]["relevance"])
             if story[2]["relevance"][i]>relthresh/100
                 push!(relidx, i)
@@ -99,11 +100,12 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
                 push!(mergeridx, i)
             end
             if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
-                push!(dzielinski, 1*story[2]["pos"][i])
+                push!(crtstorydzielinski, 1*story[2]["pos"][i])
             elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
-                push!(dzielinski, -1*story[2]["neg"][i])
+                push!(crtstorydzielinski, -1*story[2]["neg"][i])
             end
         end
+        push!(dzielinski, mean(crtstorydzielinski))
         relnovidx = intersect(relidx, novidx)
         #
         push!(storyvec["novrel_spread"],spread.(rowmat2array([story[2]["pos"]';story[2]["neut"]';story[2]["neg"]']')).*story[2]["relevance"].*exppen.(story[2]["Nov24H"]))
@@ -189,6 +191,116 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
     storyvec["dzielinski_rel$(relthresh)nov$(novspan)"] = sum(dzielinski)
     return storyvec
 end
+
+
+
+
+function dzielinskionly(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subjects"], relthresh=90, novspan="3D")
+    storyvec =  Dict{String, Any}()
+    dzielinskirelnov = Float64[]
+    dzielinskirel = Float64[]
+    dzielinskinov = Float64[]
+    dzielinskirelnovMRG = Float64[]
+    dzielinskirelnovRES = Float64[]
+    dzielinskiposrelnov = Float64[]
+    dzielinskiposrel = Float64[]
+    dzielinskiposnov = Float64[]
+    dzielinskiposrelnovMRG = Float64[]
+    dzielinskiposrelnovRES = Float64[]
+    dzielinskinegrelnov = Float64[]
+    dzielinskinegrel = Float64[]
+    dzielinskinegnov = Float64[]
+    dzielinskinegrelnovMRG = Float64[]
+    dzielinskinegrelnovRES = Float64[]
+    for story in tdnews[2]
+        crtstorydzielinskirelnov = Float64[]
+        crtstorydzielinskirel = Float64[]
+        crtstorydzielinskinov = Float64[]
+        crtstorydzielinskirelnovMRG = Float64[]
+        crtstorydzielinskirelnovRES = Float64[]
+        crtstorydzielinskiposrelnov = Float64[]
+        crtstorydzielinskiposrel = Float64[]
+        crtstorydzielinskiposnov = Float64[]
+        crtstorydzielinskiposrelnovMRG = Float64[]
+        crtstorydzielinskiposrelnovRES = Float64[]
+        crtstorydzielinskinegrelnov = Float64[]
+        crtstorydzielinskinegrel = Float64[]
+        crtstorydzielinskinegnov = Float64[]
+        crtstorydzielinskinegrelnovMRG = Float64[]
+        crtstorydzielinskinegrelnovRES = Float64[]
+        for i in 1:length(story[2]["relevance"])
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100
+                push!(crtstorydzielinskirel, 1*story[2]["pos"][i])
+                push!(crtstorydzielinskiposrel, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100
+                push!(crtstorydzielinskirel, -1*story[2]["neg"][i])
+                push!(crtstorydzielinskinegrel, -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtstorydzielinskinov, 1*story[2]["pos"][i])
+                push!(crtstorydzielinskiposnov, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtstorydzielinskinov, -1*story[2]["neg"][i])
+                push!(crtstorydzielinskinegnov, -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:RES" in story[2]["subjects"][i]
+                push!(crtstorydzielinskirelnovRES, 1*story[2]["pos"][i])
+                push!(crtstorydzielinskiposrelnovRES, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:RES" in story[2]["subjects"][i]
+                push!(crtstorydzielinskirelnovRES, -1*story[2]["neg"][i])
+                push!(crtstorydzielinskinegrelnovRES, -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:MRG" in story[2]["subjects"][i]
+                push!(crtstorydzielinskirelnovMRG, 1*story[2]["pos"][i])
+                push!(crtstorydzielinskiposrelnovMRG, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:MRG" in story[2]["subjects"][i]
+                push!(crtstorydzielinskirelnovMRG, -1*story[2]["neg"][i])
+                push!(crtstorydzielinskinegrelnovMRG, -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtstorydzielinskirelnov, 1*story[2]["pos"][i])
+                push!(crtstorydzielinskiposrelnov, 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtstorydzielinskirelnov, -1*story[2]["neg"][i])
+                push!(crtstorydzielinskinegrelnov, -1*story[2]["neg"][i])
+            end
+        end
+        push!(dzielinskirelnov, mean(crtstorydzielinskirelnov))
+        push!(dzielinskirelnovMRG, mean(crtstorydzielinskirelnovMRG))
+        push!(dzielinskirelnovRES, mean(crtstorydzielinskirelnovRES))
+        push!(dzielinskinov, mean(crtstorydzielinskinov))
+        push!(dzielinskirel, mean(crtstorydzielinskirel))
+        push!(dzielinskiposrelnov, mean(crtstorydzielinskiposrelnov))
+        push!(dzielinskiposrelnovMRG, mean(crtstorydzielinskiposrelnovMRG))
+        push!(dzielinskiposrelnovRES, mean(crtstorydzielinskiposrelnovRES))
+        push!(dzielinskiposnov, mean(crtstorydzielinskiposnov))
+        push!(dzielinskiposrel, mean(crtstorydzielinskiposrel))
+        push!(dzielinskinegrelnov, mean(crtstorydzielinskinegrelnov))
+        push!(dzielinskinegrelnovMRG, mean(crtstorydzielinskinegrelnovMRG))
+        push!(dzielinskinegrelnovRES, mean(crtstorydzielinskinegrelnovRES))
+        push!(dzielinskinegnov, mean(crtstorydzielinskinegnov))
+        push!(dzielinskinegrel, mean(crtstorydzielinskinegrel))
+        #
+    end
+    storyvec["dzielinski_rel$(relthresh)nov$(novspan)"] = sum(dzielinskirelnov)
+    storyvec["dzielinski_rel$(relthresh)nov$(novspan)_MRG"] = sum(dzielinskirelnovMRG)
+    storyvec["dzielinski_rel$(relthresh)nov$(novspan)_RES"] = sum(dzielinskirelnovRES)
+    storyvec["dzielinski_rel$(relthresh)"] = sum(dzielinskirel)
+    storyvec["dzielinski_nov$(novspan)"] = sum(dzielinskinov)
+    storyvec["dzielinski_pos_rel$(relthresh)nov$(novspan)"] = sum(dzielinskiposrelnov)
+    storyvec["dzielinski_pos_rel$(relthresh)nov$(novspan)_MRG"] = sum(dzielinskiposrelnovMRG)
+    storyvec["dzielinski_pos_rel$(relthresh)nov$(novspan)_RES"] = sum(dzielinskiposrelnovRES)
+    storyvec["dzielinski_pos_rel$(relthresh)"] = sum(dzielinskiposrel)
+    storyvec["dzielinski_pos_nov$(novspan)"] = sum(dzielinskiposnov)
+    storyvec["dzielinski_neg_rel$(relthresh)nov$(novspan)"] = sum(dzielinskinegrelnov)
+    storyvec["dzielinski_neg_rel$(relthresh)nov$(novspan)_MRG"] = sum(dzielinskinegrelnovMRG)
+    storyvec["dzielinski_neg_rel$(relthresh)nov$(novspan)_RES"] = sum(dzielinskinegrelnovRES)
+    storyvec["dzielinski_neg_rel$(relthresh)"] = sum(dzielinskinegrel)
+    storyvec["dzielinski_neg_nov$(novspan)"] = sum(dzielinskinegnov)
+    return storyvec
+end
+
+
 
 
 function tuplerize(X)
