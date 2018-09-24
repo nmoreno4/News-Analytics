@@ -183,7 +183,7 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
             storyvec["sum_$(storykeys[i])"] = Float64[sum(vec) for vec in storyvec[storykeys[i]] if length(vec)>0]
         end
     end
-    storyvec["dzielinski_rel$(relthresh)nov$(novspan)"] = sum(dzielinski)/length(dzielinski)
+    storyvec["dzielinski_rel$(relthresh)nov$(novspan)"] = sum(dzielinski)
     return storyvec
 end
 
