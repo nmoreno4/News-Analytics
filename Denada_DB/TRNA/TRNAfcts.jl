@@ -76,6 +76,9 @@ function meansumtakes(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "subje
     storyvec["novrel_spread"], storyvec["rel_spread"], storyvec["spread"] = [], [], []
     storyvec["spread_merger"], storyvec["spread_res"] = [], []
     storyvec["spread_rel$(relthresh)nov$(novspan)"], storyvec["spread_rel$(relthresh)"], storyvec["spread_nov$(novspan)"] = [], [], []
+    ##!!!!!##
+    # Add Dzielinski pos and neg!! #
+    ##!!!!!##
     dzielinski = Float64[]
     for story in tdnews[2]
         relidx = Int[]
