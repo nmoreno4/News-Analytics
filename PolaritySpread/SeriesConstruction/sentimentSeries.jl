@@ -2,13 +2,22 @@ using PyCall, Statistics, StatsBase
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/PolaritySpread/SeriesConstruction/helpfcts.jl")
 
+#####################################################################################
+########################## User defined variables####################################
+#####################################################################################
+chosenVars = ["wt", "dailyretadj", "dzielinski_rel50nov24H", "nbStories_rel50nov24H"]
+dbname = :Dzielinski
+collname = :daily_CRSP_CS_TRNA
+#####################################################################################
+
+
 # Add a function to cumulate sentiment and another to cumulate returns
 
 # Connect to the database
 @pyimport pymongo
 client = pymongo.MongoClient()
-db = client[:Dzielinski]
-collection = db[:daily_CRSP_CS_TRNA]
+db = client[dbname]
+mongo_collection = db[collname]
 
 # Name and define which portfolios to look-up in the Database
 ptfs = [["BL", [(1,3), (6,10)]],
@@ -22,8 +31,15 @@ for x in ptfs
     ptfDic[x[1]] = Dict("valR"=>x[2][1], "sizeR"=>x[2][2])
 end
 
+resDic = Dict()
+@time for spec in ptfDic
+    resDic[spec[1]] = queryDB((1,300), chosenVars, spec[2]["valR"], spec[2]["sizeR"], mongo_collection)
+    break
+end
+
+
 @time for ptf in ptfDic
-    ptfDic[ptf[1]] = merge(ptfDic[ptf[1]], fillptf(ptf[2]["valR"], ptf[2]["sizeR"], "pos_m", "nbStories", 10))
+    ptfDic[ptf[1]] = merge(ptfDic[ptf[1]], fillptf(ptf[2]["valR"], ptf[2]["sizeR"], "pos_m", "nbStories", 500))
 end
 
 
@@ -34,16 +50,17 @@ end
     ptfDic["$(findFreqCharac(ptfPair))_sentEW"] = mergeptf(ptfDic[ptfPair[1]], ptfDic[ptfPair[2]], "EWsent")
 end
 
-# Edit with new dictionary config
-Mktret = marketptf("VWret")
-Mktsent = marketptf("VWsent")
+
+ptfDic["VWret"] = marketptf(ptfDic, "VWret")
+ptfDic["VWsent"] = marketptf(ptfDic, "VWsent")
+
+using PyPlot
+plot(foo["rel_sentClas_m_(1, 2)(3, 4)"])
+plot(ret2tick(ptfDic["VWret"]))
+
 
 using RCall, DataFrames
-mydata = DataFrame(Hret=Hret, Hsent=Hsent, Lret=Lret, Lsent=Lsent,
-                   Bret=Bret, Bsent=Bsent, Sret=Lret, Ssent=Lsent,
-                   Mktret=Mktret, Mktsent=Mktsent,
-                   HMLret = Hret-Lret, SMBret = Sret-Bret,
-                   HMLsent = Hsent-Lsent, SMBsent = Ssent-Bsent)
+
 @rput mydata
 R"mod = lm(Mktret~HMLret+SMBret+HMLsent+SMBsent, mydata)"
 R"summary(mod)"

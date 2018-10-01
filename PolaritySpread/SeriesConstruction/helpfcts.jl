@@ -1,8 +1,13 @@
+using DataFrames
+
 # Find the most frequent character appearing in a tuple of strings
 function findFreqCharac(mytuple)
     a = [chr for str in mytuple for chr in str]
     return findmax(countmap(a))[2]
 end
+
+
+
 
 function ret2tick(vec, val=100)
     res = Float64[]
@@ -13,16 +18,27 @@ function ret2tick(vec, val=100)
     return res
 end
 
+
+
+
 function mergeptf(dic1, dic2, mvar)
     foo = hcat(dic1[mvar],dic2[mvar])
     return vec(mapslices(mean, foo, dims = 2))
 end
 
-function marketptf(mvar)
-    foo = hcat(SH[mvar].*SH["wt"],BH[mvar].*BH["wt"], SL[mvar].*SL["wt"],BL[mvar].*BL["wt"], M[mvar].*M["wt"])
-    weights = hcat(SH["wt"],BH["wt"],SL["wt"],BL["wt"],M["wt"])
+
+
+
+function marketptf(ptfDic, mvar)
+    foo = hcat(ptfDic["SH"][mvar].*ptfDic["SH"]["wt"],ptfDic["BH"][mvar].*ptfDic["BH"]["wt"],
+               ptfDic["SL"][mvar].*ptfDic["SL"]["wt"], ptfDic["BL"][mvar].*ptfDic["BL"]["wt"],
+               ptfDic["M"][mvar].*ptfDic["M"]["wt"])
+    weights = hcat(ptfDic["SH"]["wt"],ptfDic["BH"]["wt"],ptfDic["SL"]["wt"],ptfDic["BL"]["wt"])
     return vec(mapslices(sum, foo, dims = 2))./(vec(mapslices(sum, weights, dims = 2)))
 end
+
+
+
 
 function initptf(sentMeasure)
     if sentMeasure[1:3]!="dzi"
@@ -33,6 +49,9 @@ function initptf(sentMeasure)
                                              "VWsumSent"=>Float64[], "sumStories"=>Float64[], "wt"=>Float64[])
     end
 end
+
+
+
 
 function fillptf(valR, sizeR, sentMeasure = "spread_rel50nov3D_m", storiescount="nbStories_rel50nov24H", tdmax=100)
     ptfDict = initptf(sentMeasure)
@@ -49,13 +68,79 @@ function fillptf(valR, sizeR, sentMeasure = "spread_rel50nov3D_m", storiescount=
     return ptfDict
 end
 
-function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount)
+
+
+function retModule()
+end
+
+function dzieModule()
+end
+
+function mCapModule()
+end
+
+
+function initDF(colnames, nbrows, coltype=Union{Missing, Float64}, defaultfill=missing)
+    df1 = DataFrame()
+    for colname in colnames
+        df1[Symbol(colname)] = Array{coltype,1}(defaultfill, nbrows)
+    end
+    return df1
+end
+
+function queryDB(tdperiods, chosenVars, valR, sizeR, mongo_collection)
+    #query filters for MongoDB
+    periodspan = Dict("\$gte"=>tdperiods[1], "\$lte"=>tdperiods[2])
+    bmfilter = Dict("\$gte"=>valR[1], "\$lte"=>valR[2])
+    sizefilter = Dict("\$gte"=>sizeR[1], "\$lte"=>sizeR[2])
+
+    # Get all the unique trading days
+    uniqueTd = mongo_collection[:find](Dict("td"=>periodspan))[:distinct]("td")
+    # Get all unique stock identifiers (permno) during the period
+    uniquePermno = mongo_collection[:find](Dict("td"=>periodspan,
+                                                "rankbm"=>bmfilter,
+                                                "ranksize"=>sizefilter))[:distinct]("permno")
+
+    #Create dataframes
+    dfDict = Dict{String, DataFrame}()
+    for queryVar in chosenVars
+        dfDict[queryVar] = initDF(Int64.(uniquePermno), length(uniqueTd))
+    end
+
+    for td in tdperiods[1]:tdperiods[2]
+        for filtDic in mongo_collection[:find](Dict("td"=>td,
+                                                    "rankbm"=>bmfilter,
+                                                    "ranksize"=>sizefilter),
+                                               # Return only the variables we care about + the permno
+                                               Dict(zip([chosenVars;"permno"], repeat([1],length(chosenVars)+1))))
+            crtpermno = Int64(filtDic["permno"])
+            for var in filtDic
+                if !(var[1] in ["permno", "_id"])
+                    if typeof(var[2]) in [Float64, Int64]
+                        dfDict[var[1]][Symbol(crtpermno)][td] = Float64(var[2])
+                    end
+                end #if one of the desired variables
+            end
+        end
+    end
+    return dfDict
+end
+
+
+
+
+
+
+
+
+function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount, mongo_collection)
     dayretvec = Float64[]
     daywtvec = Union{Float64, Missing}[]
     daysentvec = Union{Float64, Missing}[]
     dayStoriesCountvec = Union{Int64}[]
-    for filtDic in collection[:find](Dict("td"=>td, "rankbm"=>Dict("\$gte"=>valR[1], "\$lte"=>valR[2]),
-                                            "ranksize"=>Dict("\$gte"=>sizeR[1], "\$lte"=>sizeR[2])))
+    for filtDic in mongo_collection[:find](Dict("td"=>td, "rankbm"=>Dict("\$gte"=>valR[1], "\$lte"=>valR[2]),
+                                            "ranksize"=>Dict("\$gte"=>sizeR[1], "\$lte"=>sizeR[2])),
+                                     Dict("wt"=>1, "dailyretadj"=>1, sentMeasure=>1, storiescount=>1))
         push!(dayretvec, filtDic["dailyretadj"])
         if typeof(filtDic["wt"])==Float64
             push!(daywtvec, filtDic["wt"])
