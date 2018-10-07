@@ -1,3 +1,4 @@
+using IterTools
 # using RCall, DataFrames, Statistics
 # @rlibrary RPostgres
 # @rlibrary DBI
@@ -206,6 +207,45 @@ function dielinski_init(relthresh, novspan, prefix="")
 end
 
 
+
+variables = ["pos", "neg", "sent", "nbStories"]
+filters = [relthresh, novspan]
+topics = ["MRG", "RES"]
+
+
+function variablenames(variables, filters, topics, filttype="allcomb")
+    varnames = String[]
+    for var in variables
+        #If I want all the combinations of novrel filters
+        if filttype == "allcomb"
+            for filts in subsets(filters)
+                crtfilters = ""
+                for filt in filts
+                    crtfilters = "$(crtfilters)_$filt"
+                end
+                push!(varnames, "$(var)$(crtfilters)")
+            end
+        #If I want only the joint combination of nov and rel filter
+        elseif filttype == "allfilters"
+            crtfilters = ""
+            for filt in filters
+                crtfilters = "$(crtfilters)_$filt"
+            end
+            push!(varnames, "$(var)$(crtfilters)")
+        end
+    end
+    copyvarnames = copy(varnames)
+    for top in topics
+        for var in copyvarnames
+            push!(varnames, "$(var)_$(top)")
+        end
+    end
+    return varnames
+end
+
+
+
+
 function storiesCount_init(relthresh, novspan)
     storiesCount = Dict()
     storiesCount["nbStories_rel$(relthresh)nov$(novspan)"]=0
@@ -278,6 +318,132 @@ function dzielinskiandsum(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "s
     storyvec["novrel_spread"], storyvec["rel_spread"], storyvec["spread"] = [], [], []
     storyvec["spread_merger"], storyvec["spread_res"] = [], []
     storyvec["spread_rel$(relthresh)nov$(novspan)"], storyvec["spread_rel$(relthresh)"], storyvec["spread_nov$(novspan)"] = [], [], []
+    dzielinskidic = dielinski_init(relthresh, novspan)
+    storiesCount = storiesCount_init(relthresh, novspan)
+    for story in tdnews[2]
+        for x = [:relidx, :novidx, :mergeridx, :resultidx]
+            @eval $x = Int[]
+        end
+        crtdzielinskidic = dielinski_init(relthresh, novspan)
+        for i in 1:length(story[2]["relevance"])
+            if story[2]["relevance"][i]>relthresh/100
+                push!(relidx, i)
+            end
+            if story[2]["Nov$(novspan)"][i]==0
+                push!(novidx, i)
+            end
+            if "N2:RES" in story[2]["subjects"][i]
+                push!(resultidx, i)
+            end
+            if "N2:MRG" in story[2]["subjects"][i]
+                push!(mergeridx, i)
+            end
+            if story[2]["sentClas"][i] == 1
+                push!(crtdzielinskidic["dzielinski_simple"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_simplepos"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1
+                push!(crtdzielinskidic["dzielinski_simple"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_simpleneg"], -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_posrel$(relthresh)"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_negrel$(relthresh)"], -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtdzielinskidic["dzielinski_nov$(novspan)"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_posnov$(novspan)"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtdzielinskidic["dzielinski_nov$(novspan)"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_negnov$(novspan)"], -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:RES" in story[2]["subjects"][i]
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)RES"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_posrel$(relthresh)nov$(novspan)RES"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:RES" in story[2]["subjects"][i]
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)RES"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_negrel$(relthresh)nov$(novspan)RES"], -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:MRG" in story[2]["subjects"][i]
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)MRG"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_posrel$(relthresh)nov$(novspan)MRG"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0 && "N2:MRG" in story[2]["subjects"][i]
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)MRG"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_negrel$(relthresh)nov$(novspan)MRG"], -1*story[2]["neg"][i])
+            end
+            if story[2]["sentClas"][i] == 1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)"], 1*story[2]["pos"][i])
+                push!(crtdzielinskidic["dzielinski_posrel$(relthresh)nov$(novspan)"], 1*story[2]["pos"][i])
+            elseif story[2]["sentClas"][i] == -1 && story[2]["relevance"][i]>relthresh/100 && story[2]["Nov$(novspan)"][i]==0
+                push!(crtdzielinskidic["dzielinski_rel$(relthresh)nov$(novspan)"], -1*story[2]["neg"][i])
+                push!(crtdzielinskidic["dzielinski_negrel$(relthresh)nov$(novspan)"], -1*story[2]["neg"][i])
+            end
+        end #loop over takes
+        length(intersect(relidx,novidx))>0 ? storiesCount["nbStories_rel$(relthresh)nov$(novspan)"]+=1 : nothing
+        length(novidx)>0 ? storiesCount["nbStories_nov$(novspan)"]+=1 : nothing
+        length(relidx)>0 ? storiesCount["nbStories_rel$(relthresh)"]+=1 : nothing
+        storiesCount["nbStories_total"]+=1
+        length(intersect(relidx,novidx,mergeridx))>0 ? storiesCount["nbStories_rel$(relthresh)nov$(novspan)MRG"]+=1 : nothing
+        length(intersect(relidx,novidx,resultidx))>0 ? storiesCount["nbStories_rel$(relthresh)nov$(novspan)RES"]+=1 : nothing
+        relnovidx = intersect(relidx, novidx)
+
+        for el in crtdzielinskidic
+            if length(el[2])>0
+                push!(dzielinskidic[el[1]], mean(el[2]))
+            end
+        end
+
+        # Take the whole take vectors and either save them or take their mean (sum)
+        storyvec = othervariablepopulate(storyvec, story, relnovidx, relidx, novidx, mergeridx, resultidx, myvars)
+    end #looped over all stories
+
+    # Delete all variables for which I have no observations
+    for var in storyvec
+        if length(storyvec[var[1]])==0 && var[1]!="subjects" && var[1]!="storyID"
+            delete!(storyvec, var[1])
+        end
+    end
+    for el in dzielinskidic
+        if length(dzielinskidic[el[1]])==0
+            delete!(dzielinskidic, el[1])
+        end
+    end
+
+    # Compute the mean (and sum) of all the stories for the day-stock pair
+    storykeys = collect(keys(storyvec))
+    for i in 1:length(storykeys)
+        if storykeys[i] != "subjects" && storykeys[i] != "storyID"
+            storyvec["mean_$(storykeys[i])"] = Float64[mean(vec) for vec in storyvec[storykeys[i]] if length(vec)>0]
+            storyvec["sum_$(storykeys[i])"] = Float64[sum(vec) for vec in storyvec[storykeys[i]] if length(vec)>0]
+        end
+    end
+
+    # Sum of the dzielinski measures for the day-stock
+    for el in dzielinskidic
+        storyvec[el[1]] = sum(el[2])
+    end
+
+    # Add the number of stories per type
+    for el in storiesCount
+        storyvec[el[1]] = sum(el[2])
+    end
+
+    return storyvec
+end
+
+
+
+# news tone, strength of negative news, strength of positive news, and news repetition.  Also, can you please include only news that is 100% relevant
+function filterfct(tdnews, myvars = ["pos", "neg", "neut", "sentClas", "spread"], relthresh, novspan)
+    dicvars = [myvars; ["$(var)_merger" for var in myvars[1:end-1]]; ["$(var)_res" for var in myvars[1:end-1]];
+                ["$(var)_rel$(relthresh)" for var in myvars[1:end-1]]; ["$(var)_rel$(relthresh)nov$(novspan)" for var in myvars[1:end-1]];
+                ["$(var)_nov$(novspan)" for var in myvars[1:end-1]]; ["rel_$(var)" for var in myvars[1:end-1]];
+                ["novrel_$(var)" for var in myvars[1:end-1]]]
+    storyvec =  Dict{String, Any}(zip(dicvars, [[] for x in dicvars]))
+    storyvec["storyID"] = String[]
+    storyvec["subjects"] = Any[]
     dzielinskidic = dielinski_init(relthresh, novspan)
     storiesCount = storiesCount_init(relthresh, novspan)
     for story in tdnews[2]

@@ -54,7 +54,7 @@ end
 @pyimport pymongo
 client = pymongo.MongoClient()
 db = client[:Denada]
-collection = db[Symbol("copy_daily_CRSP_CS_TRNA")]
+collection = db[Symbol("daily_CRSP_CS_TRNA")]
 myvars = ["pos", "neg", "neut", "sentClas", "subjects"]
 myvars = []
 
@@ -69,10 +69,10 @@ aggvars = []
 # collection[:insert_one](ResultDic[4295860884][87])
 
 #Must still do 2005!!!
-for y in 2006
+for y in 2017
     ispan = 1:10
-    if y == 2020
-        ispan = 2:10
+    if y == 2017
+        ispan = 6:10
     end
     for i in ispan
 
