@@ -1,11 +1,15 @@
-using PyCall, Statistics, StatsBase
+using PyCall, Statistics, StatsBase, DataFramesMeta, NaNMath
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/PolaritySpread/SeriesConstruction/helpfcts.jl")
 
 #####################################################################################
 ########################## User defined variables####################################
 #####################################################################################
-chosenVars = ["wt", "dailyretadj", "dzielinski_rel50nov24H", "nbStories_rel50nov24H"]
+chosenVars = ["wt", "dailyretadj", "dzielinski_rel50nov24H", "nbStories_rel50nov24H",
+              "dzielinski_rel50nov24H_RES", "nbStories_rel50nov24HRES",
+              "dzielinski_rel50nov24H_MRG", "nbStories_rel50nov24HMRG",
+              "dzielinski_rel50", "nbStories_rel50",
+              "dzielinski_simple", "nbStories_total"]
 dbname = :Dzielinski
 collname = :daily_CRSP_CS_TRNA
 #####################################################################################
@@ -33,34 +37,43 @@ end
 
 resDic = Dict()
 @time for spec in ptfDic
-    resDic[spec[1]] = queryDB((1,300), chosenVars, spec[2]["valR"], spec[2]["sizeR"], mongo_collection)
+    resDic[spec[1]] = queryDB((1,50), chosenVars, spec[2]["valR"], spec[2]["sizeR"], mongo_collection)
     break
 end
 
+dziescore = resDic["M"]["dzielinski_rel50nov24H"];
+dzieNbstories = resDic["M"]["nbStories_rel50nov24H"];
+dzieProper = @time convert(Array, dziescore[:,:]) ./ convert(Array, dzieNbstories[:,:])
 
-@time for ptf in ptfDic
-    ptfDic[ptf[1]] = merge(ptfDic[ptf[1]], fillptf(ptf[2]["valR"], ptf[2]["sizeR"], "pos_m", "nbStories", 500))
+countNaN(resDic["M"]["nbStories_rel50nov24HMRG"], true)
+countNaN(resDic["M"]["dzielinski_rel50nov24H_RES"], true)
+countNaN(resDic["M"]["dzielinski_rel50nov24H"], true)
+
+
+a = replace_nan(subperiodCol(dziescore, 10));
+# use a sum that ignores missing!!
+b = aggregate(a, :subperiod, [sum])
+a = replace_nan(subperiodCol(dzieNbstories, 50));
+c = aggregate(a, :subperiod, [sum]);
+
+
+function dfColSum(crtDF)
+    res = Array{Union{Missing,Float64},1}(missing, size(crtDF, 2))
+    for col in 1:size(crtDF, 2)
+        res[col] = sum(skipmissing(crtDF[:,col]))
+    end
+    return res
 end
 
 
-@time for ptfPair in [("SH", "BH"), ("SL", "BL"), ("BL", "BH"), ("SL", "SH")]
-    ptfDic["$(findFreqCharac(ptfPair))_retVW"] = mergeptf(ptfDic[ptfPair[1]], ptfDic[ptfPair[2]], "VWret")
-    ptfDic["$(findFreqCharac(ptfPair))_sentVW"] = mergeptf(ptfDic[ptfPair[1]], ptfDic[ptfPair[2]], "VWsent")
-    ptfDic["$(findFreqCharac(ptfPair))_retEW"] = mergeptf(ptfDic[ptfPair[1]], ptfDic[ptfPair[2]], "EWret")
-    ptfDic["$(findFreqCharac(ptfPair))_sentEW"] = mergeptf(ptfDic[ptfPair[1]], ptfDic[ptfPair[2]], "EWsent")
-end
 
-
-ptfDic["VWret"] = marketptf(ptfDic, "VWret")
-ptfDic["VWsent"] = marketptf(ptfDic, "VWsent")
-
-using PyPlot
-plot(foo["rel_sentClas_m_(1, 2)(3, 4)"])
-plot(ret2tick(ptfDic["VWret"]))
-
-
-using RCall, DataFrames
-
-@rput mydata
-R"mod = lm(Mktret~HMLret+SMBret+HMLsent+SMBsent, mydata)"
-R"summary(mod)"
+# using PyPlot
+# plot(foo["rel_sentClas_m_(1, 2)(3, 4)"])
+# plot(ret2tick(ptfDic["VWret"]))
+#
+#
+# using RCall, DataFrames
+#
+# @rput mydata
+# R"mod = lm(Mktret~HMLret+SMBret+HMLsent+SMBsent, mydata)"
+# R"summary(mod)"

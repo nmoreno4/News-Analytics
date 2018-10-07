@@ -68,6 +68,54 @@ function fillptf(valR, sizeR, sentMeasure = "spread_rel50nov3D_m", storiescount=
     return ptfDict
 end
 
+function replace_nan(crtDF::DataFrame)
+    for r in 1:size(crtDF,1)
+        for c in 1:size(crtDF,2)
+            if !(ismissing(crtDF[r,c])) && isnan(crtDF[r,c])
+                crtDF[r,c] = missing
+            end
+        end
+    end
+    return crtDF
+end
+
+
+
+function countNaN(crtDF, nonnan=false)
+    NaNcount = [0]
+    for r in 1:size(crtDF,1)
+        for c in 1:size(crtDF,2)
+            # Count values that are NaN
+            if !nonnan && !(ismissing(crtDF[r,c])) && isnan(crtDF[r,c])
+                NaNcount[1]+=1
+            # Count values that are non-NaN
+            elseif nonnan && !(ismissing(crtDF[r,c])) && !(isnan(crtDF[r,c]))
+                NaNcount[1]+=1
+            end
+        end
+    end
+    return NaNcount[1]
+end
+
+
+
+function subperiodCol(crtdf, perlength)
+    let subperiod = 1
+        rowcount = 1
+        foo = @byrow! crtdf begin
+            @newcol subperiod::Array{Int}
+            if rowcount <= perlength*subperiod
+                :subperiod = subperiod
+            else
+                subperiod+=1
+                :subperiod = subperiod
+            end
+            rowcount+=1
+        end
+        return foo
+    end
+end
+
 
 
 function retModule()
