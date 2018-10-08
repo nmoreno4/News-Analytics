@@ -122,7 +122,7 @@ for y in 2017
                             push!(ResultDic[permid][td][sid]["neut"], item["data"]["analytics"]["analyticsScores"][1]["sentimentNeutral"])
                             push!(ResultDic[permid][td][sid]["sentClas"], item["data"]["analytics"]["analyticsScores"][1]["sentimentClass"])
                             push!(ResultDic[permid][td][sid]["subjects"], item["data"]["newsItem"]["subjects"])
-                            # ResultDic[permid][td][sid]["subjects"] = collect(Set(ResultDic[permid][td][sid]["subjects"]))
+                            ResultDic[permid][td][sid]["subjects"] = collect(Set(ResultDic[permid][td][sid]["subjects"]))
                         catch
                             ResultDic[permid][td][sid] = Dict(
                                 "firstCreated"=>item["data"]["newsItem"]["metadata"]["firstCreated"],
