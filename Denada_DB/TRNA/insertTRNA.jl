@@ -39,21 +39,22 @@ permid = ResultDic[1]
 
 cc = Any[0,0]
 @time for permid in ResultDic
+    cc[1]+=1
     for td in permid[2]
-        cc[1]+=1
         tdstories = tdFilter(td, variables, novrelfilters, topics, false)
         tdstories = allToTuple!(tdstories)
+        cc[2] = copy(tdstories)
         if td[1]<length(dates) #Make sure I don't have news after my last trading day
-            tdstories["date"]=dates[td[1]+1]
-            # collection[:update_one](
-            #         Dict("\$and"=> [
-            #                         Dict("permid"=>permid[1]),
-            #                         Dict("td"=> td[1])
-            #                         ]),
-            #         Dict("\$set"=>tdstories))
+            # tdstories["date"]=dates[td[1]+1]
+            collection[:update_one](
+                    Dict("\$and"=> [
+                                    Dict("permid"=>permid[1]),
+                                    Dict("td"=> td[1])
+                                    ]),
+                    Dict("\$set"=>tdstories))
         end
     end #for td
-    if cc[1]>500
+    if cc[1]>100
         break
     end
 end #for permid

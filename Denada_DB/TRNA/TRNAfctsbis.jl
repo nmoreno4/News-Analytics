@@ -2,49 +2,42 @@ using IterTools, Statistics
 
 function tdFilter(tdnews, myvars, filters, topics, includeSubjects=false)
     dicvars = variablenames(myvars, novrelfilters, topics)
-    tdDic =  Dict{String, Any}(zip(dicvars, [Float64[] for x in dicvars]))
+    tdDic =  Dict{String, Any}(zip(dicvars, [nothing for x in dicvars])) #Dic for the sum of all stories
     tdDic["storyID"] = String[]
     includeSubjects ? tdDic["subjects"] = Any[] : nothing
     for story in tdnews[2]
+        storyDic =  Dict{String, Any}(zip(dicvars, [Float64[] for x in dicvars])) #The dic for the current story
         dicIdx = idxDic(filters, topics) #init empty idx filters
         dicIdx = filterIdx(dicIdx, story, filters, myvars) #fill idx filters
-        print(dicIdx["sent_rel0_nov0"])
-        for varString in tdDic
-            print(varString[1])
-            if varString[1]!="storyID" && varString[1]!="subjects"
-                idxToKeep = variableIntersect(varString[1], dicIdx)
-                if varString[1][1:3]=="pos" && length(idxToKeep)>0
-                    push!(tdDic[varString[1]], mean(1*story[2]["pos"][idxToKeep]))
-                elseif varString[1][1:3]=="neg" && length(idxToKeep)>0
-                    push!(tdDic[varString[1]], mean(-1*story[2]["neg"][idxToKeep]))
-                elseif varString[1][1:4]=="sent" && length(idxToKeep)>0
-                    sentclass = story[2]["sentClas"][idxToKeep]
-                    takesents = Float64[]
-                    for cl in sentclass
-                        cl==-1 ? append!(takesents, -1 .* story[2]["neg"][idxToKeep]) : nothing
-                        cl==1 ? append!(takesents, 1 .* story[2]["pos"][idxToKeep]) : nothing
-                    end
-                    push!(tdDic[varString[1]], mean(takesents))
-                elseif varString[1][1:9]=="nbStories" && length(idxToKeep)>0
-                    tdDic[varString[1]]==Any[] ? tdDic[varString[1]]=0 : nothing
-                    tdDic[varString[1]]+=1
+        for varString in storyDic
+            idxToKeep = variableIntersect(varString[1], dicIdx)
+            if varString[1][1:3]=="pos" && length(idxToKeep)>0
+                push!(storyDic[varString[1]], mean(1*story[2]["pos"][idxToKeep]))
+            elseif varString[1][1:3]=="neg" && length(idxToKeep)>0
+                push!(storyDic[varString[1]], mean(-1*story[2]["neg"][idxToKeep]))
+            elseif varString[1][1:4]=="sent" && length(idxToKeep)>0
+                sentclass = story[2]["sentClas"][idxToKeep]
+                takesents = Float64[]
+                for cl in sentclass
+                    cl==-1 ? append!(takesents, -1 .* story[2]["neg"][idxToKeep]) : nothing
+                    cl==1 ? append!(takesents, 1 .* story[2]["pos"][idxToKeep]) : nothing
                 end
-                print("\n=========\n")
-            else
-                varString[1]=="subjects" ? push!(tdDic[varString[1]],collect(Set(collect(Base.Iterators.Flatten(story[2]["subjects"]))))) : nothing
-                varString[1]=="storyID" ? push!(tdDic[varString[1]],story[1]) : nothing
-            end #if numerical variable
-        end #for all final variables
+                push!(storyDic[varString[1]], mean(takesents))
+            elseif varString[1][1:9]=="nbStories" && length(idxToKeep)>0
+                isa(storyDic[varString[1]], Array) ? storyDic[varString[1]]=0 : nothing
+                storyDic[varString[1]]+=1
+            end
+        end #for all numerical variables
+
+        includeSubjects ? push!(tdDic["subjects"],collect(Set(collect(Base.Iterators.Flatten(story[2]["subjects"]))))) : nothing
+        push!(tdDic["storyID"],story[1])
 
         # Sum of the dzielinski measures for the day-stock
-        for el in tdDic
-            if !(el[1]=="storyID" || el[1]=="subjects") && length(el[2])>0
-                tdDic[el[1]] = sum(el[2])
-            else
-                !(el[1]=="storyID" || el[1]=="subjects") ? tdDic[el[1]] = nothing : nothing
+        for el in storyDic
+            if length(el[2])>0
+                tdDic[el[1]]==nothing ? tdDic[el[1]] = sum(el[2]) : tdDic[el[1]] += sum(el[2])
             end
-        end
-        print("done bitch!!")
+        end #for all storie's values
     end #for each story in the td pair.
     return tdDic
 end
@@ -148,10 +141,12 @@ function tuplerize(X)
 end
 
 
-function allToTuple!(tdstories)
+function allToTuple!(tdstories, emptyarrays=true)
     for pair in tdstories
         if pair[2]==nothing
             tdstories[pair[1]] = pair[2]
+        elseif length(pair[2])==0 && emptyarrays
+            tdstories[pair[1]] = nothing
         elseif isa(pair[2], Array)
             if isa(pair[2][1], Array)
                 tdstories[pair[1]] = tuplerize(pair[2])
@@ -160,7 +155,7 @@ function allToTuple!(tdstories)
                 tdstories[pair[1]] = tuple(pair[2]...)
             end
         else
-            tdstories[pair[1]] = tuple(pair[2]...)
+            tdstories[pair[1]] = pair[2]
         end
     end
     return tdstories
