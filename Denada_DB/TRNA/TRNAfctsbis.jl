@@ -2,31 +2,34 @@ using IterTools, Statistics
 
 function tdFilter(tdnews, myvars, filters, topics, includeSubjects=false)
     dicvars = variablenames(myvars, novrelfilters, topics)
-    tdDic =  Dict{String, Any}(zip(dicvars, [[] for x in dicvars]))
+    tdDic =  Dict{String, Any}(zip(dicvars, [Float64[] for x in dicvars]))
     tdDic["storyID"] = String[]
     includeSubjects ? tdDic["subjects"] = Any[] : nothing
     for story in tdnews[2]
         dicIdx = idxDic(filters, topics) #init empty idx filters
         dicIdx = filterIdx(dicIdx, story, filters, myvars) #fill idx filters
+        print(dicIdx["sent_rel0_nov0"])
         for varString in tdDic
+            print(varString[1])
             if varString[1]!="storyID" && varString[1]!="subjects"
                 idxToKeep = variableIntersect(varString[1], dicIdx)
-                if varString[1][1:3]=="pos"
+                if varString[1][1:3]=="pos" && length(idxToKeep)>0
                     push!(tdDic[varString[1]], mean(1*story[2]["pos"][idxToKeep]))
-                elseif varString[1][1:3]=="neg"
+                elseif varString[1][1:3]=="neg" && length(idxToKeep)>0
                     push!(tdDic[varString[1]], mean(-1*story[2]["neg"][idxToKeep]))
-                elseif varString[1][1:4]=="sent"
+                elseif varString[1][1:4]=="sent" && length(idxToKeep)>0
                     sentclass = story[2]["sentClas"][idxToKeep]
                     takesents = Float64[]
                     for cl in sentclass
-                        cl==-1 ? push!(takesents, -1*story[2]["neg"][idxToKeep]) : nothing
-                        cl==1 ? push!(takesents, 1*story[2]["pos"][idxToKeep]) : nothing
+                        cl==-1 ? append!(takesents, -1 .* story[2]["neg"][idxToKeep]) : nothing
+                        cl==1 ? append!(takesents, 1 .* story[2]["pos"][idxToKeep]) : nothing
                     end
                     push!(tdDic[varString[1]], mean(takesents))
                 elseif varString[1][1:9]=="nbStories" && length(idxToKeep)>0
-                    el[2]==Any[] ? tdDic[varString[1]]=0 : nothing
+                    tdDic[varString[1]]==Any[] ? tdDic[varString[1]]=0 : nothing
                     tdDic[varString[1]]+=1
                 end
+                print("\n=========\n")
             else
                 varString[1]=="subjects" ? push!(tdDic[varString[1]],collect(Set(collect(Base.Iterators.Flatten(story[2]["subjects"]))))) : nothing
                 varString[1]=="storyID" ? push!(tdDic[varString[1]],story[1]) : nothing
@@ -34,12 +37,16 @@ function tdFilter(tdnews, myvars, filters, topics, includeSubjects=false)
         end #for all final variables
 
         # Sum of the dzielinski measures for the day-stock
-        print(tdDic)
         for el in tdDic
-            print(el[2])
-            !(el[1]=="storyID" || el[1]=="subjects") ? tdDic[el[1]] = sum(el[2]) : nothing
+            if !(el[1]=="storyID" || el[1]=="subjects") && length(el[2])>0
+                tdDic[el[1]] = sum(el[2])
+            else
+                !(el[1]=="storyID" || el[1]=="subjects") ? tdDic[el[1]] = nothing : nothing
+            end
         end
+        print("done bitch!!")
     end #for each story in the td pair.
+    return tdDic
 end
 
 function variablenames(variables, filters, topics)
@@ -129,4 +136,32 @@ function trading_day(dates, crtdate, offset = Dates.Hour(0))
     end
   end
   return res
+end
+
+
+function tuplerize(X)
+    X = Array{Any}(X)
+    for i in 1:length(X)
+        X[i] = tuple(X[i]...)
+    end
+    return X
+end
+
+
+function allToTuple!(tdstories)
+    for pair in tdstories
+        if pair[2]==nothing
+            tdstories[pair[1]] = pair[2]
+        elseif isa(pair[2], Array)
+            if isa(pair[2][1], Array)
+                tdstories[pair[1]] = tuplerize(pair[2])
+                tdstories[pair[1]] = tuple(tdstories[pair[1]]...)
+            else
+                tdstories[pair[1]] = tuple(pair[2]...)
+            end
+        else
+            tdstories[pair[1]] = tuple(pair[2]...)
+        end
+    end
+    return tdstories
 end

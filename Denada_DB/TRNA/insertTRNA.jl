@@ -4,9 +4,15 @@ using JSON, TimeZones, ArgParse, PyCall, Dates, Statistics, JLD2
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/Denada_DB/TRNA/TRNAfctsbis.jl")
 include("$(laptop)/Denada_DB/WRDS/WRDSdownload.jl")
-novrelfilters = [(100, "24H"), (50, "3D")]
+novrelfilters = [(100, "24H"), (50, "3D"), (0,0)]
 variables = ["pos", "neg", "sent", "nbStories"]
-topics = ["MRG", "RES"]
+topics = ["AAA", "ACCI", "ALLCE", "BACT", "BKRFIG", "BKRT", "BONS", "BOSS1",
+          "BUYB", "CASE1", "CEO1", "CFO1", "CHAIR1", "CLASS", "CM1", "CMPNY",
+          "CNSL", "CORGOV", "CPROD", "DBTR", "DDEAL", "DEAL1", "DIV", "DVST",
+          "FIND1", "FINE1", "HOSAL", "IPO", "LAYOFS", "LIST1", "MEET1", "MNGISS",
+          "MONOP", "MRG", "NAMEC", "PRES1", "PRIV", "PRXF", "RECAP1", "RECLL",
+          "REORG", "RES", "RESF", "SHPP", "SHRACT", "SISU", "SL1", "SPLITB",
+          "STAT", "STK", "XPAND"]
 
 # Path to the raw data. The @ will be replaced below with the approriate year to retrieve the correct file. Check the 40060090 in case it has changed from the source.
 datapath = "/home/nicolas/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/TRNA.TR.News.CMPNY_AMER.EN.@.40060090.JSON.txt"
@@ -30,6 +36,24 @@ JLD2.@load "/run/media/nicolas/Research/Data/Intermediate/splitDic/Dic_$(y)_p$(i
 ResultDic = partDic
 print("Dic_$(y)_p$(i).jld2 loaded")
 permid = ResultDic[1]
-for td in permid[2]
-    tdstories = tdFilter(td, variables, novrelfilters, topics)
-end
+
+cc = Any[0,0]
+@time for permid in ResultDic
+    for td in permid[2]
+        cc[1]+=1
+        tdstories = tdFilter(td, variables, novrelfilters, topics, false)
+        tdstories = allToTuple!(tdstories)
+        if td[1]<length(dates) #Make sure I don't have news after my last trading day
+            tdstories["date"]=dates[td[1]+1]
+            # collection[:update_one](
+            #         Dict("\$and"=> [
+            #                         Dict("permid"=>permid[1]),
+            #                         Dict("td"=> td[1])
+            #                         ]),
+            #         Dict("\$set"=>tdstories))
+        end
+    end #for td
+    if cc[1]>500
+        break
+    end
+end #for permid
