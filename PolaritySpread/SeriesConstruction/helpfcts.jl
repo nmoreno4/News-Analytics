@@ -10,14 +10,22 @@ end
 
 
 function ret2tick(vec, val=100)
-    res = Float64[]
+    res = Float64[val]
     for i in vec
+        if ismissing(i)
+            i=0
+        end
         val*=(1+i)
         push!(res, val)
     end
     return res
 end
 
+function cumret(vec)
+    prices = ret2tick(vec)
+    res = (prices[end]-prices[1])/prices[1]
+    return res
+end
 
 
 
@@ -68,11 +76,12 @@ function fillptf(valR, sizeR, sentMeasure = "spread_rel50nov3D_m", storiescount=
     return ptfDict
 end
 
-function replace_nan(crtDF::DataFrame)
+
+function replace_nan(crtDF, replace_val=missing)
     for r in 1:size(crtDF,1)
         for c in 1:size(crtDF,2)
             if !(ismissing(crtDF[r,c])) && isnan(crtDF[r,c])
-                crtDF[r,c] = missing
+                crtDF[r,c] = replace_val
             end
         end
     end
@@ -98,7 +107,9 @@ function countNaN(crtDF, nonnan=false)
 end
 
 
-
+"""
+Adds a column to a Dataframe indicating the period of the row.
+"""
 function subperiodCol(crtdf, perlength)
     let subperiod = 1
         rowcount = 1
@@ -116,16 +127,6 @@ function subperiodCol(crtdf, perlength)
     end
 end
 
-
-
-function retModule()
-end
-
-function dzieModule()
-end
-
-function mCapModule()
-end
 
 
 function initDF(colnames, nbrows, coltype=Union{Missing, Float64}, defaultfill=missing)
@@ -218,4 +219,53 @@ function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount, mongo_collec
         sumStories = sum(skipmissing(dayStoriesCountvec))
         return (VWret, EWret, EWsumSent, VWsumSent, sum(skipmissing(daywtvec)), sumStories)
     end
+end
+
+
+missingsum(x) = sum(skipmissing(x))
+nonmissing(x) = !(ismissing(x))
+function missingmean(x)
+    try
+        return mean(skipmissing(x))
+    catch
+        missing
+    end
+end
+
+function weightsum(wMat, sMat, WS, ignoremissing)
+    res = Union{Missing,Float64}[]
+    coveredMktCp = Union{Missing,Float64}[]
+    for row in 1:size(sMat,1)
+        wrow = wMat[row,:];
+        srow = sMat[row,:];
+        if ignoremissing
+            # Take as sum of market only stocks where there is a news (sum of weights = 1)
+            idxtokeep = intersect(findall(nonmissing,srow), findall(nonmissing,wrow))
+            if WS == "VW"
+                a = wrow[idxtokeep]./sum(wrow[idxtokeep]).*srow[idxtokeep]
+            elseif WS == "EW"
+                a = mean(wrow[idxtokeep])./sum(wrow[idxtokeep]).*srow[idxtokeep]
+            end
+        else
+            # Take as sum of market all stocks (sum of weights < 1)
+            if WS == "VW"
+                a = wrow./missingsum(wrow).*srow
+            elseif WS == "EW"
+                a = missingmean(wrow)./missingsum(wrow).*srow
+            end
+            a = Array{Float64,1}(a[findall(nonmissing,a)])
+        end #if only use non-missing values
+        push!(res, sum(a))
+        push!(coveredMktCp, missingsum(wrow[findall(nonmissing,srow)]./missingsum(wrow)))
+    end #for row
+    return res, coveredMktCp
+end
+
+
+function dfColSum(crtDF)
+    res = Array{Union{Missing,Float64},1}(missing, size(crtDF, 2))
+    for col in 1:size(crtDF, 2)
+        res[col] = sum(skipmissing(crtDF[:,col]))
+    end
+    return res
 end
