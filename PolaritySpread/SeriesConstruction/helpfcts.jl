@@ -182,17 +182,17 @@ end
 
 
 
-function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount, mongo_collection)
+function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount, mongo_collection, wtvar, retvar)
     dayretvec = Float64[]
     daywtvec = Union{Float64, Missing}[]
     daysentvec = Union{Float64, Missing}[]
     dayStoriesCountvec = Union{Int64}[]
     for filtDic in mongo_collection[:find](Dict("td"=>td, "rankbm"=>Dict("\$gte"=>valR[1], "\$lte"=>valR[2]),
                                             "ranksize"=>Dict("\$gte"=>sizeR[1], "\$lte"=>sizeR[2])),
-                                     Dict("wt"=>1, "dailyretadj"=>1, sentMeasure=>1, storiescount=>1))
-        push!(dayretvec, filtDic["dailyretadj"])
-        if typeof(filtDic["wt"])==Float64
-            push!(daywtvec, filtDic["wt"])
+                                     Dict(wtvar=>1, retvar=>1, sentMeasure=>1, storiescount=>1))
+        push!(dayretvec, filtDic[retvar])
+        if typeof(filtDic[wtvar])==Float64
+            push!(daywtvec, filtDic[wtvar])
         else
             push!(daywtvec, missing)
         end
@@ -222,13 +222,20 @@ function sizeValRetSent(td, valR, sizeR, sentMeasure, storiescount, mongo_collec
 end
 
 
-missingsum(x) = sum(skipmissing(x))
+# missingsum(x) = sum(skipmissing(x))
 nonmissing(x) = !(ismissing(x))
+function missingsum(x)
+    if sum(nonmissing.(x))>0
+        return sum(skipmissing(x))
+    else
+        return missing
+    end
+end
 function missingmean(x)
-    try
+    if sum(nonmissing.(x))>0
         return mean(skipmissing(x))
-    catch
-        missing
+    else
+        return missing
     end
 end
 
@@ -268,4 +275,73 @@ function dfColSum(crtDF)
         res[col] = sum(skipmissing(crtDF[:,col]))
     end
     return res
+end
+
+
+
+function aggperiod(resDic, ptf, chosenvar, perlength, aggfunct)
+    if perlength>1
+        if typeof(resDic)==Dict{Any,Any}
+            resMat = replace_nan(subperiodCol(resDic[ptf][chosenvar], perlength));
+        elseif typeof(resDic)==DataFrame
+            resMat = replace_nan(subperiodCol(resDic, perlength));
+        end
+        resMat = aggregate(resMat, :subperiod, [aggfunct]);
+    else
+        resMat = replace_nan(resDic[ptf][chosenvar])
+    end
+    return resMat
+end
+
+
+function sent_ret_series(sentMat, wMat, retMat, nbstoriesMat)
+    try
+        sentMat = replace_nan(convert(Array{Union{Float64, Missing},2}, convert(Array, sentMat) ./ convert(Array, nbstoriesMat)))
+    catch
+        print(size(sentMat))
+        print("\n==\n")
+        print(size(nbstoriesMat))
+        error("custom: arrays could not be broadcast to a common size")
+    end
+    wMat = convert(Array, wMat)
+    retMat = convert(Array, retMat)
+
+    VWsent, coveredMktCp = weightsum(wMat, sentMat, "VW", false)
+    VWret, coveredMktCp = weightsum(wMat, retMat, "VW", false)
+
+    EWsent, coveredMktCp = weightsum(wMat, sentMat, "EW", true)
+    EWret, coveredMktCp = weightsum(wMat, retMat, "EW", true)
+    return VWsent, VWret, EWsent, EWret
+end
+
+
+function aggSeriesToDic!(aggseriesDic, resDic, ptfs, sentvar, nbstoriesvar, perlength, wtvar="dailywt", retvar="dailyretadj")
+    for crtptf in ptfs
+        ptf = crtptf[1]
+        print(ptf)
+        @time sentMat = aggperiod(resDic, ptf, sentvar, perlength, missingsum);
+        @time nbstoriesMat = aggperiod(resDic, ptf, nbstoriesvar, perlength, missingsum);
+        @time wMat = aggperiod(resDic, ptf, wtvar, perlength, missingmean);
+        @time retMat = aggperiod(resDic, ptf, retvar, perlength, cumret);
+        #delete useless subperiod identifyier column
+        for cdf in (sentMat, nbstoriesMat, wMat, retMat)
+            delete!(cdf, :subperiod)
+        end
+        #Compute the time series
+        aggseriesDic["VWsent_$(ptf)"], aggseriesDic["VWret_$(ptf)"], aggseriesDic["EWsent_$(ptf)"], aggseriesDic["EWret_$(ptf)"] = sent_ret_series(sentMat, wMat, retMat, nbstoriesMat)
+    end
+    return aggseriesDic
+end
+
+
+function findSentColumns(mydf)
+    sentidx, otheridx = Int[], Int[]
+    for i in 1:length(names(mydf))
+        if length(String(names(mydf)[i]))>5 && String(names(mydf)[i])[3:6]=="sent"
+            push!(sentidx, i)
+        else
+            push!(otheridx, i)
+        end
+    end
+    return sentidx, otheridx
 end

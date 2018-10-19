@@ -29,7 +29,7 @@ end
 #%% CS treatment
 ##################################################################################################
 #%% Download CS data
-@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable, "/run/media/nicolas/Data/Inputs/sectors.csv")
+@time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable)
 
 @time CSdf = CS_age!(CSdf)
 #Keep only stocks having at least two years of history in compustat database
@@ -75,7 +75,8 @@ decme = decME(CRSPdf)
 CRSPdf = julyJuneDates!(CRSPdf)
 
 #Compute drifting weights going on from date of rebalancement (starting each new ffyear)
-CRSPdf = driftweights!(CRSPdf)
+sort!(CRSPdf, [:permno, :date]);
+CRSPdf = driftweights!(CRSPdf, [:permno, :date])
 
 # Join December and June info
 CRSPdf_jun_me = juneDecMerge(CRSPdf, decme)
@@ -101,7 +102,7 @@ linkinbounds = Array{Bool}(replace(linkinbounds, missing=>false));
 CS_ccm = CS_ccm[linkinbounds, :]
 
 # match gvkey with permID
-CS_ccm = gvkeyMatchPermID!(CS_ccm, "/run/media/nicolas/Data/Inputs/permidmatch/matched.csv")
+CS_ccm = gvkeyMatchPermID!(CS_ccm,)
 
 # merge june CRSP with Compustat. This is to compute the breakpoints.
 june_merge = join(CRSPdf_jun_me, CS_ccm, kind=:inner, on=[:permno, :jdate]);
@@ -221,7 +222,7 @@ monthly_merge[:exretavg] = prov[:exretavg]
 #      Daily data     #
 #######################
 print("Downloading daily data!...")
-CRSPvariables = "a.permno, a.date,a.ret, a.vol, a.prc, a.numtrd"
+CRSPvariables = "a.permno, a.date, a.ret, a.vol, a.prc, a.numtrd, a.retx"
 CRSPdatatable = ["crsp.dsf", "crsp.dsenames"] #the "d"sf stands for daily
 CRSPdf = @time CRSPdownload(CRSPdaterange, CRSPvariables, CRSPdatatable);
 CRSPdf = CRSPdf[(CRSPdf[:date].>=Dates.Date(2003,1,1)),:]
@@ -241,8 +242,8 @@ CRSPdf[:month] = Dates.month.(CRSPdf[:date])
     @newcol yearmonth::Array{Int}
     :yearmonth = :year*100+:month
 end;
-CRSPdf = CRSPdf[[:yearmonth, :permno, :retadj, :date, :vol, :numtrd, :prc]]
-names!(CRSPdf, [:yearmonth, :permno, :dailyretadj, :dailydate, :dailyvol, :dailynumtrades, :dailyprice])
+CRSPdf = CRSPdf[[:yearmonth, :permno, :retadj, :date, :vol, :numtrd, :prc, :retx]]
+names!(CRSPdf, [:yearmonth, :permno, :dailyretadj, :dailydate, :dailyvol, :dailynumtrades, :dailyprice, :dailyretx])
 dailyDF = @time join(CRSPdf, monthly_merge, kind=:left, on=[:yearmonth, :permno])
 
 
@@ -277,4 +278,96 @@ p=[0]
         end
     end
     collection[:insert_one](insertDic)
+end;
+
+
+
+
+#######
+# New #
+#######
+
+cumprodplus1(x) = cumprod(x.+1)
+lagvec(x) = [missing; x[1:end-1]]
+
+
+# dailyCRSP[ismissing.(dailyCRSP[:retx]), :retx] = 0
+# dailyCRSP[:year] = Dates.year.(dailyCRSP[:date])
+# dailyCRSP[:month] = Dates.month.(dailyCRSP[:date])
+# @time dailyCRSP = @byrow! dailyCRSP begin
+#     @newcol yearmonth::Array{Int}
+#     :yearmonth = :year*100+:month
+# end;
+# names!(dailyCRSP, [:permno, :dailydate, :dailyretx, :year, :month, :yearmonth, :td])
+# dailyDF = @time join(dailyCRSP, monthly_merge, kind=:left, on=[:yearmonth, :permno])
+# @time dailyDF = @byrow! dailyDF begin
+#     @newcol td::Array{Int}
+#     :td = trading_day(dates, :dailydate)
+# end;
+# dupind = @time nonunique(dailyDF[[:permno, :td]])
+# popfirst!(dupind)
+# push!(dupind, false)
+# dupind = map(x->invertbool(x), dupind)
+# @time dailyDF = dailyDF[dupind,:];
+
+sort!(dailyDF, [:permno, :dailydate])
+dailyDF = groupcumret!(dailyDF, [:permno, :ffmonth, :ffyear], :dailyretx, [:permno, :dailydate])
+dailyDF = grouplag!(dailyDF, [:permno, :ffmonth, :ffyear], :cumdailyretx, 1, [:permno, :dailydate])
+dailyDF[ismissing.(dailyDF[:lagcumdailyretx_1]), :lagcumdailyretx_1] = 1
+dailyDF = dailyDF[nonmissing.(dailyDF[:wt]),:]
+
+ids = Any[0]
+newwt = Bool[]
+for i in 1:length(dailyDF[:wt])
+    if dailyDF[:wt][i]!=ids[1] #Different as previous
+        push!(newwt, true)
+        ids[1] = dailyDF[:wt][i]
+    else
+        push!(newwt, false)
+    end
+end
+dailyDF[:newwt] = newwt
+# dailyDF = grouplag!(dailyDF, :permno, :wt, 1)
+# dailyDF = setfirstlme!(dailyDF, :permno, :lagwt_1)
+@time dailyDF = @byrow! dailyDF begin
+    @newcol dailywt::Array{Union{Float64,Missing}}
+    if :newwt
+        :dailywt = :wt
+    else
+        :dailywt = :wt*:lagcumdailyretx_1
+    end
+end;
+
+dailyDF = dailyDF[[:td, :permno, :wtdaily]]
+
+using PyCall
+@pyimport pymongo
+client = pymongo.MongoClient()
+db = client[:Denada]
+collection = db[:daily_CRSP_CS_TRNA]
+p=[0, 0]
+@time for row in eachrow(dailyDF)
+    p[1] += 1
+    if p[1] in [1,5000,1000000,10000000]
+        print(row)
+        print(p[2])
+    end
+    if !ismissing(row[:dailywt]) && !ismissing(row[:wt]) && !ismissing(row[:ptf_2by3_size_value]) && !ismissing(row[:ranksize]) && !ismissing(row[:rankbm])
+        collection[:update_one](
+                Dict("\$and"=> [
+                                Dict("permno"=>row[:permno]),
+                                Dict("td"=> row[:td])
+                                ]),
+                Dict("\$set"=>Dict("dailywt"=>row[:dailywt], "wt" => row[:wt], "ptf_2by3_size_value" => row[:ptf_2by3_size_value],
+                                   "rankbm" => row[:rankbm], "ranksize" => row[:ranksize])))
+    else
+        p[2]+=1
+        collection[:update_one](
+                Dict("\$and"=> [
+                                Dict("permno"=>row[:permno]),
+                                Dict("td"=> row[:td])
+                                ]),
+                Dict("\$set"=>Dict("dailywt"=>nothing, "wt" => nothing, "ptf_2by3_size_value" => nothing,
+                                   "rankbm" =>nothing, "ranksize" => nothing)))
+    end
 end;

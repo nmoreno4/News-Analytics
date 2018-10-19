@@ -34,27 +34,54 @@ function mergepermnopermco!(df)
 end
 
 
-function groupcumret!(df, groupvar, myvar)
-    a = by(df, groupvar) do pdf
-      DataFrame(cumret = cumprod(pdf[myvar].+1))
+function groupcumret!(df, groupvar, myvar, sortvars)
+    if length(sortvars)==1
+        a = by(df, groupvar) do pdf
+          DataFrame(cumretx = cumprod(pdf[myvar].+1), sortvar1=pdf[sortvars[1]])
+        end
+        sort!(a, [:sortvar1])
+    elseif length(sortvars)==2
+        a = by(df, groupvar) do pdf
+          DataFrame(cumretx = cumprod(pdf[myvar].+1), sortvar1=pdf[sortvars[1]], sortvar2=pdf[sortvars[2]])
+        end
+        sort!(a, [:sortvar1, :sortvar2])
+    elseif length(sortvars)==3
+        a = by(df, groupvar) do pdf
+          DataFrame(cumretx = cumprod(pdf[myvar].+1), sortvar1=pdf[sortvars[1]], sortvar2=pdf[sortvars[2]], sortvar3=pdf[sortvars[3]])
+        end
+        sort!(a, [:sortvar1, :sortvar2, :sortvar3])
     end
-    df[Symbol("cum$(myvar)")] = a[:cumret]
+    df[Symbol("cum$(myvar)")] = a[:cumretx]
     return df
 end
 
-function grouplag!(df, groupvar, myvar, nlags)
-    a = by(df, groupvar) do pdf
-      DataFrame(lag = lag(pdf[myvar], nlags))
+function grouplag!(df, groupvar, myvar, nlags, sortvars)
+    if length(sortvars)==1
+        a = by(df, groupvar) do pdf
+          DataFrame(lag = lag(pdf[myvar], nlags), sortvar1=pdf[sortvars[1]])
+        end
+        sort!(a, [:sortvar1])
+    elseif length(sortvars)==2
+        a = by(df, groupvar) do pdf
+          DataFrame(lag = lag(pdf[myvar], nlags), sortvar1=pdf[sortvars[1]], sortvar2=pdf[sortvars[2]])
+        end
+        sort!(a, [:sortvar1, :sortvar2])
+    elseif length(sortvars)==3
+        a = by(df, groupvar) do pdf
+          DataFrame(lag = lag(pdf[myvar], nlags), sortvar1=pdf[sortvars[1]], sortvar2=pdf[sortvars[2]], sortvar3=pdf[sortvars[3]])
+        end
+        sort!(a, [:sortvar1, :sortvar2, :sortvar3])
     end
     df[Symbol("lag$(myvar)_$(nlags)")] = a[:lag]
     return df
 end
 
-function setfirstlme!(df, groupvar=:permno, myvar=:lagme_1)
+function setfirstlme!(df, groupvar, myvar, sortvars)
     # First value of group is me/(1+retx)
     a = by(df, groupvar) do pdf
-      DataFrame(firstlme = [pdf[:me][1]/(pdf[:retx][1]+1) ; pdf[myvar][2:end]])
+      DataFrame(firstlme = [pdf[:me][1]/(pdf[:retx][1]+1) ; pdf[myvar][2:end]] , sortvar1=pdf[sortvars[1]], sortvar2=pdf[sortvars[2]])
     end
+    sort!(a, [:sortvar1, :sortvar2])
     df[myvar] = a[:firstlme]
     return df
 end
