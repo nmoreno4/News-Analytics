@@ -98,17 +98,16 @@ function driftweights!(CRSPdf, sortvars)
     # Create :cumretx over the Fama-French year, i.e. from -18 to -6 month ago
     CRSPdf = groupcumret!(CRSPdf, [:permno, :ffyear], :retx, sortvars)
     # Lag :cumretx (the cumulated return ex dividend in the previous period)
-    CRSPdf = grouplag!(CRSPdf, [:permno, :ffyear], :cumretx, 1, sortvars)
-    CRSPdf[ismissing.(CRSPdf[:lagcumretx_1]), :lagcumretx_1] = 1
+    CRSPdf = grouplag!(CRSPdf, [:permno], :cumretx, 1, sortvars)
 
     # lag market cap
-    CRSPdf = grouplag!(CRSPdf, [:permno, :ffyear], :me, 1, sortvars)
+    CRSPdf = grouplag!(CRSPdf, [:permno], :me, 1, sortvars)
     CRSPdf[[:date, :me, :lagme_1]]
 
     # if first permno then use me/(1+retx) to replace the missing value
-    CRSPdf = setfirstlme!(CRSPdf, [:permno, :ffyear], :lagme_1, sortvars)
+    CRSPdf = setfirstlme!(CRSPdf, [:permno], :lagme_1, sortvars)
 
-    # baseline me
+    # baseline me ==> me in June, when I rebalance the portfolio
     mebase = CRSPdf[CRSPdf[:ffmonth] .== 1, [:permno, :ffyear, :lagme_1]]
     rename!(mebase, :lagme_1 => :mebase)
 
@@ -168,11 +167,11 @@ function bmClassficiation(june_merge)
 
     # select NYSE stocks for bucket breakdown
     # exchcd = 1 and positive beme and positive me and shrcd in (10,11) and at least 2 years in comp
-    stocksfrobreakpoints = ( (june_merge[:exchcd].==1) .& (june_merge[:beme].>0)
+    stocksforbreakpoints = ( (june_merge[:exchcd].==1) .& (june_merge[:beme].>0)
                              .& (june_merge[:me].>0) .& (june_merge[:count].>1)
                              .& ((june_merge[:shrcd].==10).|(june_merge[:shrcd].==11)) );
-    stocksfrobreakpoints = Array{Bool}(replace(stocksfrobreakpoints, missing=>false));
-    nyse_breaks=june_merge[stocksfrobreakpoints, :];
+    stocksforbreakpoints = Array{Bool}(replace(stocksforbreakpoints, missing=>false));
+    nyse_breaks=june_merge[stocksforbreakpoints, :];
 
     nyse_breaks = by(nyse_breaks, :jdate) do df
       DataFrame(percentiles_me = tuple(percentile(Array{Float64}(df[:me]), collect(10:10:100))...),
@@ -245,4 +244,120 @@ function momentumClassification(CRSPdf, J=12, nbbreaks=10)
         end
     end
     return umd
+end
+
+
+
+function CSraw(CSdaterange, yearly_CSvariables, yearly_CSdatatable)
+    print("Downloading CS data...")
+    @time CSdf = dl_CS(CSdaterange, yearly_CSvariables, yearly_CSdatatable)
+    print("Compute nb. of years in CS database")
+    @time CSdf = CS_age!(CSdf)
+    #Keep only stocks having at least two years of history in compustat database
+    # CSdf = CSdf[(CSdf[:count].>1),:]
+    # CSdf = CSdf[(CSdf[:year].>=2003),:]
+    print("Compute be for yearly data")
+    @time CSdf = compute_be!(CSdf)
+end
+
+
+function CRSPdl(CRSPdaterange, monthly_CRSPvariables, monthly_CRSPdatatable, varToInt=[:permco, :permno, :shrcd, :exchcd])
+    print("Download yearly CRSP data...")
+    @time CRSPdf = CRSPdownload(CRSPdaterange, monthly_CRSPvariables, monthly_CRSPdatatable)
+
+    # change variable format to int
+    print("Change columns to Int")
+    CRSPdf = changeColumnType!(CRSPdf, varToInt, Int)
+
+    # Add lined up date to be end of month.
+    # It's called jdate because at the end I will only keep those from the month of june.
+    print("Add a variable based on date, transform it to the end of the month date and store it in the :jdate column")
+    CRSPdf = lineupDate!(CRSPdf, Dates.Month, :jdate, :date)
+
+    # Adjust for deli return
+    print("Adjust for delist return")
+    @time CRSPdf = delistAdjust!(CRSPdf)
+
+    # calculate market equity, sort and remove useless columns
+    print("Compute :me, delete now-disposable variables and sort by [:permco,:jdate,:me]")
+    CRSPdf[:me]=abs.(CRSPdf[:prc]).*CRSPdf[:shrout]
+    delete!(CRSPdf, [:dlret,:dlstdt,:prc,:shrout])
+    sort!(CRSPdf, [:permco,:jdate,:me])
+
+
+    # Merge permno permco market equities
+    print("Merge permno and permco :me")
+    if CRSPdaterange!=["01/01/2000", "6/30/2018"]
+        error("The dataframe split has been set for [\"01/01/2000\", \"6/30/2018\"] dates explicitly")
+    end
+    a1 = CRSPdf[1:999921,:]
+    a2 = CRSPdf[999922:end,:]
+    @time CRSPdf = mergepermnopermco!(a1)
+    @time CRSPdfa = mergepermnopermco!(a2)
+    append!(CRSPdf, CRSPdfa)
+    sort!(CRSPdf, [:permno,:jdate])
+
+    # #Add columns flagging if we are in December or June
+    # CRSPdf = addJuneDecemberFlags(CRSPdf)
+
+    #Remove
+
+    # keep only December market cap (+permno and date)
+    print("Create a new dataframe containing only the :me of December. Rename those :dec_me")
+    decme = decME(CRSPdf)
+    # add variables for what year (ffyear) and month (ffmonth) we were 6 months prior to the observation
+    print("Add the date (+the month and year) of the 6 months lagged date and call it :ffdate")
+    print("This means that the june jdate would end up having a :ffmonth==12 and :ffyear of the preceding year")
+    CRSPdf = julyJuneDates!(CRSPdf)
+
+    #Compute drifting weights going on from date of rebalancement (starting each new ffyear)
+    print("Sort on :permno and :date")
+    sort!(CRSPdf, [:permno, :date]);
+    CRSPdf = driftweights!(CRSPdf, [:permno, :date])
+
+    # Join December and June info
+    print("The me of december y-1 is matched with the data of june y")
+    CRSPdf_jun_me = juneDecMerge(CRSPdf, decme)
+    CRSPdf_jun_me = CRSPdf_jun_me[[:permno, :date, :jdate, :shrcd, :exchcd, :retadj, :me,
+                            :wt, :cumretx, :mebase, :lagme_1, :dec_me]];
+    sort!(CRSPdf_jun_me, [:permno, :jdate]);
+
+    return CRSPdf, CRSPdf_jun_me
+end
+
+
+
+
+function CSccmMerge(CSdf)
+    @time ccm = ccmDownload()
+
+    # Link Compustat to CCM
+    CS_ccm=join(CSdf,ccm,kind=:left,on=:gvkey);
+
+    CS_ccm[:yearend] = map(x->ceil(x, Dates.Year)-Dates.Day(1), CS_ccm[:datadate]);
+    CS_ccm[:jdate] = CS_ccm[:yearend].+Dates.Month(6);
+
+    # set link date bounds. This removes all duplicates
+    linkinbounds = (CS_ccm[:jdate].<=CS_ccm[:linkenddt]) .& (CS_ccm[:jdate].>=CS_ccm[:linkdt]);
+    linkinbounds = Array{Bool}(replace(linkinbounds, missing=>false));
+    CS_ccm = CS_ccm[linkinbounds, :]
+
+    # match gvkey with permID
+    CS_ccm = gvkeyMatchPermID!(CS_ccm)
+    return CS_ccm
+end
+
+
+
+function bmSizeRanks(june_merge)
+    print("Breakpoint computation")
+    june_merge = julyJuneDates!(june_merge);
+    dupind = nonunique(june_merge[[:permno, :ffyear]]);
+    popfirst!(dupind);
+    push!(dupind, false);
+    dupind = map(x->invertbool(x), dupind);
+    june_merge = june_merge[dupind,:];
+    bmranks = bmClassficiation(june_merge);
+    bmranks = bmranks[[:permno, :ffyear, :ptf_2by3_size_value, :ranksize, :rankbm]];
+    return bmranks
 end

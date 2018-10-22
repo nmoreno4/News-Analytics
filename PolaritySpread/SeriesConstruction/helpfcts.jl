@@ -231,6 +231,13 @@ function missingsum(x)
         return missing
     end
 end
+function missingmax(x)
+    if sum(nonmissing.(x))>0
+        return maximum(skipmissing(x))
+    else
+        return missing
+    end
+end
 function missingmean(x)
     if sum(nonmissing.(x))>0
         return mean(skipmissing(x))
@@ -279,16 +286,20 @@ end
 
 
 
-function aggperiod(resDic, ptf, chosenvar, perlength, aggfunct)
+function aggperiod(resDic, ptf, chosenvar, perlength, aggfunct, offset=0)
     if perlength>1
         if typeof(resDic)==Dict{Any,Any}
-            resMat = replace_nan(subperiodCol(resDic[ptf][chosenvar], perlength));
+            resMat = replace_nan(subperiodCol(resDic[ptf][chosenvar][(1+offset):end,:], perlength));
         elseif typeof(resDic)==DataFrame
-            resMat = replace_nan(subperiodCol(resDic, perlength));
+            resMat = replace_nan(subperiodCol(resDic[(1+offset):end,:], perlength));
         end
         resMat = aggregate(resMat, :subperiod, [aggfunct]);
     else
-        resMat = replace_nan(resDic[ptf][chosenvar])
+        if typeof(resDic)==Dict{Any,Any}
+            resMat = replace_nan(resDic[ptf][chosenvar][(1+offset):end,:])
+        else
+            resMat = resDic
+        end
     end
     return resMat
 end
@@ -315,17 +326,19 @@ function sent_ret_series(sentMat, wMat, retMat, nbstoriesMat)
 end
 
 
-function aggSeriesToDic!(aggseriesDic, resDic, ptfs, sentvar, nbstoriesvar, perlength, wtvar="dailywt", retvar="dailyretadj")
-    for crtptf in ptfs
+function aggSeriesToDic!(aggseriesDic, resDic, ptfs, sentvar, nbstoriesvar, perlength, offset, wtvar="dailywt", retvar="dailyretadj")
+    @time for crtptf in ptfs
         ptf = crtptf[1]
         print(ptf)
-        @time sentMat = aggperiod(resDic, ptf, sentvar, perlength, missingsum);
-        @time nbstoriesMat = aggperiod(resDic, ptf, nbstoriesvar, perlength, missingsum);
-        @time wMat = aggperiod(resDic, ptf, wtvar, perlength, missingmean);
-        @time retMat = aggperiod(resDic, ptf, retvar, perlength, cumret);
+        sentMat = aggperiod(resDic, ptf, sentvar, perlength, missingsum, offset);
+        nbstoriesMat = aggperiod(resDic, ptf, nbstoriesvar, perlength, missingsum, offset);
+        wMat = aggperiod(resDic, ptf, wtvar, perlength, missingmean, offset);
+        retMat = aggperiod(resDic, ptf, retvar, perlength, cumret, offset);
         #delete useless subperiod identifyier column
-        for cdf in (sentMat, nbstoriesMat, wMat, retMat)
-            delete!(cdf, :subperiod)
+        if perlength>1
+            for cdf in (sentMat, nbstoriesMat, wMat, retMat)
+                delete!(cdf, :subperiod)
+            end
         end
         #Compute the time series
         aggseriesDic["VWsent_$(ptf)"], aggseriesDic["VWret_$(ptf)"], aggseriesDic["EWsent_$(ptf)"], aggseriesDic["EWret_$(ptf)"] = sent_ret_series(sentMat, wMat, retMat, nbstoriesMat)
@@ -344,4 +357,41 @@ function findSentColumns(mydf)
         end
     end
     return sentidx, otheridx
+end
+
+
+function HMLspreads!(seriesDic)
+    for WS in ["EW", "VW"]
+        for var in ["ret", "sent"]
+            seriesDic["$(WS)$(var)_H"] = (seriesDic["$(WS)$(var)_BH"].+seriesDic["$(WS)$(var)_SH"])/2
+            seriesDic["$(WS)$(var)_L"] = (seriesDic["$(WS)$(var)_BL"].+seriesDic["$(WS)$(var)_SL"])/2
+            seriesDic["$(WS)$(var)_HML"] = seriesDic["$(WS)$(var)_H"]-seriesDic["$(WS)$(var)_L"]
+        end
+    end
+    return seriesDic
+end
+
+
+function idPtf(All_rets, ptf1Mat, ptf2Mat)
+    All_ptf_ids = All_rets
+    for row in 1:size(All_ptf_ids,1)
+        for col  in 1:size(All_ptf_ids,2)
+            All_ptf_ids[row,col] = missing
+        end
+    end
+    @time for row in 1:size(ptf1Mat,1)
+        for col  in 1:size(ptf1Mat,2)
+            if !ismissing(ptf1Mat[row,col])
+                All_ptf_ids[names(ptf1Mat)[col]][row] = 1
+            end
+        end
+    end
+    @time for row in 1:size(ptf2Mat,1)
+        for col  in 1:size(ptf2Mat,2)
+            if !ismissing(ptf2Mat[row,col])
+                All_ptf_ids[names(ptf2Mat)[col]][row] = 1
+            end
+        end
+    end
+    return All_ptf_ids
 end
