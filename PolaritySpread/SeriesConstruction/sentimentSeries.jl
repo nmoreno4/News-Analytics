@@ -1,4 +1,6 @@
-using PyCall, Statistics, StatsBase, DataFramesMeta, NaNMath, RCall, CSV
+using PyCall, Statistics, StatsBase, DataFramesMeta, NaNMath, RCall, CSV, DataFrames, JLD2
+
+#CAREFUL: offset is not really corret since I would need to remove the first observations
 
 FFfactors = CSV.read("/home/nicolas/Data/FF/dailyFactors.csv")[1:3776,:]
 for row in 1:size(FFfactors, 1)
@@ -52,15 +54,16 @@ resDic = Dict()
     resDic[spec[1]] = queryDB(tdperiods, chosenVars, spec[2]["valR"], spec[2]["sizeR"], mongo_collection)
 end
 
+JLD2.@load "/home/nicolas/Data/resDic.jld2"
+
 L_id = idPtf(resDic["ALL"]["dailyretadj"], resDic["SL"]["dailyretadj"], resDic["BL"]["dailyretadj"])
 H_id = idPtf(resDic["ALL"]["dailyretadj"], resDic["SH"]["dailyretadj"], resDic["BH"]["dailyretadj"])
 
-#Aggregate id mat
 
 #create big DFs
 finalSeriesDic = Dict()
-for perlength in [1,5,20,60]
-    @time for offset in [0,1,2,3,5,10,20]
+for perlength in [1,5,10,20,60]
+    @time for offset in [0,1,2,3]
         print("perlength: $perlength -/- offset: $offset\n")
         if offset<perlength
             finalSeriesDic["aggseriesDic_p$(perlength)_o$(offset)"] = aggSeriesToDic!(Dict(), resDic, ptfs, sentvar, nbstoriesvar, perlength, offset, wtvar, retvar)
@@ -76,13 +79,11 @@ for perlength in [1,5,20,60]
     end
 end
 
-using JLD2
-JLD2.@load "/home/nicolas/Data/finalSeriesDic.jld2" finalSeriesDic
-JLD2.@load "/home/nicolas/Data/resDic.jld2" resDic
+JLD2.@save "/home/nicolas/Data/finalSeriesDic.jld2" finalSeriesDic
 
 finalSeriesDicBis = Dict()
-for perlength in [1,5,20,60]
-    for offset in [0,1,2,3,5,10,20]
+for perlength in [1,5,10,20,60]
+    for offset in [0,1,2,3]
         print("perlength: $perlength -/- offset: $offset\n")
         @time if offset<perlength
             finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"] = aggperiod(resDic["ALL"]["dailyretadj"],"dummy", "dummy", perlength, cumret,offset)
@@ -94,10 +95,69 @@ for perlength in [1,5,20,60]
         end
     end
 end
-JLD2.@load "/home/nicolas/Data/finalSeriesDicBis.jld2" finalSeriesDicBis
+JLD2.@save "/home/nicolas/Data/finalSeriesDicBis.jld2" finalSeriesDicBis
 
 
+perlength = 20
+offset = 1
 
+# permno | td | ret_{i,t} | sent_{i,t} | sent_{i,t-1} | sent_{i,t-2} | ret_{HML,t} | ret_{Mkt_RF,t} | sent_{HML,t} | sent_{Mkt_RF,t} | sent_{H,t} | sent_{L,t} | sent_{H,t-1} | sent_{L,t-1} | isL | isH
+foo = countmissing(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"], true) #ACHTUNG: weird number of total observations (+18M vs 22M??)
+Rmatrix = Array{Union{Float64,Missing},2}(undef, foo, 16)
+let i=1
+for row in 1:size(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"],1)
+    print(row)
+    for col in 1:size(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"],2)
+        if !ismissing(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"][row, col])
+            Rmatrix[i, 1] = col
+            Rmatrix[i, 2] = row
+            Rmatrix[i, 3] = finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"][row, col]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+            Rmatrix[i, 4] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row, col]
+            row>1 ? Rmatrix[i, 5] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row-1, col] : Rmatrix[i, 5] = missing
+            row>2 ? Rmatrix[i, 6] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row-2, col] : Rmatrix[i, 6] = missing
+            Rmatrix[i, 7] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWret_HML][row]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+            Rmatrix[i, 8] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWret_ALL][row]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+            Rmatrix[i, 9] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_HML][row]
+            Rmatrix[i, 10] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_ALL][row]
+            Rmatrix[i, 11] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_H][row]
+            Rmatrix[i, 12] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_L][row]
+            row>1 ? Rmatrix[i, 13] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_H][row-1] : Rmatrix[i, 13] = missing
+            row>1 ? Rmatrix[i, 14] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_L][row-1] : Rmatrix[i, 14] = missing
+            ismissing(finalSeriesDicBis["L_id_p$(perlength)_o$(offset)"][row, col]) ?  Rmatrix[i, 15] = 0 : Rmatrix[i, 15] = finalSeriesDicBis["L_id_p$(perlength)_o$(offset)"][row, col]
+            ismissing(finalSeriesDicBis["H_id_p$(perlength)_o$(offset)"][row, col]) ?  Rmatrix[i, 16] = 0 : Rmatrix[i, 16] = finalSeriesDicBis["H_id_p$(perlength)_o$(offset)"][row, col]
+            i+=1
+        end
+    end
+end
+end #let block
+Rmatrix = convert(DataFrame, Rmatrix)
+names!(Rmatrix, [:permno, :td, :ret_i_t, :sent_i_t, :sent_i_tl1, :sent_i_tl2, :ret_HML_t, :ret_Mkt_t, :sent_HML_t, :sent_Mkt_t, :sent_H_t, :sent_L_t, :sent_H_tl1, :sent_L_tl1, :isL, :isH])
+Hmatrix =  Rmatrix[Rmatrix[:isH] .== 1.0, :];
+Lmatrix =  Rmatrix[Rmatrix[:isL] .== 1.0, :];
+@rput Rmatrix
+@rput Hmatrix
+@rput Lmatrix
+@rlibrary plm
+R"mod = lm(ret_i_t~sent_i_tl1+sent_Mkt_t+ret_Mkt_t, data=Rmatrix)"
+R"summary(mod)"
+R"Rmatrix$sent_i_t[1:100]"
+R"E <- plm::pdata.frame(Rmatrix, index=c('permno', 'td'), drop.index=TRUE, row.names=TRUE)";
+R"H <- plm::pdata.frame(Hmatrix, index=c('permno', 'td'))";
+R"L <- plm::pdata.frame(Lmatrix, index=c('permno', 'td'))";
+R"reg2 = plm::plm(ret_i_t ~  sent_L_tl1*isL,
+            data = E, model='within')"
+
+
+R"reg1 = plm::plm(ret_i_t ~ sent_i_t + sent_H_t + sent_HML_t + sent_Mkt_t,
+            data = H, model='random')"
+R"print(summary(reg1))"
+# R"reg4 = plm::plm(ret_i_t ~ sent_i_t + sent_H_t + sent_HML_t + sent_Mkt_t + ret_Mkt_t,
+#             data = H, model='within')"
+# R"summary(reg4)"
+print("\n===========\n")
+R"reg3 = plm::plm(ret_i_t ~ sent_i_t + sent_L_t + sent_HML_t + sent_Mkt_t,
+            data = L, model='random')"
+R"print(summary(reg3))"
 
 aggseriesDic = aggSeriesToDic!(Dict(), resDic, ptfs, sentvar, nbstoriesvar, perlength, 0, wtvar, retvar)
 aggseriesDic01 = aggSeriesToDic!(Dict(), resDic, ptfs, sentvar, nbstoriesvar, perlength, 1, wtvar, retvar)

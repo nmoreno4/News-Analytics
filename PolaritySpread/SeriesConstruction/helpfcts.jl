@@ -110,12 +110,12 @@ end
 """
 Adds a column to a Dataframe indicating the period of the row.
 """
-function subperiodCol(crtdf, perlength)
+function subperiodCol(crtdf, perlength, offset)
     let subperiod = 1
         rowcount = 1
         foo = @byrow! crtdf begin
             @newcol subperiod::Array{Int}
-            if rowcount <= perlength*subperiod
+            if rowcount <= perlength*subperiod-offset
                 :subperiod = subperiod
             else
                 subperiod+=1
@@ -289,9 +289,9 @@ end
 function aggperiod(resDic, ptf, chosenvar, perlength, aggfunct, offset=0)
     if perlength>1
         if typeof(resDic)==Dict{Any,Any}
-            resMat = replace_nan(subperiodCol(resDic[ptf][chosenvar][(1+offset):end,:], perlength));
+            resMat = replace_nan(subperiodCol(resDic[ptf][chosenvar], perlength, offset));
         elseif typeof(resDic)==DataFrame
-            resMat = replace_nan(subperiodCol(resDic[(1+offset):end,:], perlength));
+            resMat = replace_nan(subperiodCol(resDic, perlength, offset));
         end
         resMat = aggregate(resMat, :subperiod, [aggfunct]);
     else
@@ -332,8 +332,8 @@ function aggSeriesToDic!(aggseriesDic, resDic, ptfs, sentvar, nbstoriesvar, perl
         print(ptf)
         sentMat = aggperiod(resDic, ptf, sentvar, perlength, missingsum, offset);
         nbstoriesMat = aggperiod(resDic, ptf, nbstoriesvar, perlength, missingsum, offset);
-        wMat = aggperiod(resDic, ptf, wtvar, perlength, missingmean, offset);
-        retMat = aggperiod(resDic, ptf, retvar, perlength, cumret, offset);
+        wMat = aggperiod(resDic, ptf, wtvar, perlength, missingmean, 0);
+        retMat = aggperiod(resDic, ptf, retvar, perlength, cumret, 0);
         #delete useless subperiod identifyier column
         if perlength>1
             for cdf in (sentMat, nbstoriesMat, wMat, retMat)
@@ -373,12 +373,9 @@ end
 
 
 function idPtf(All_rets, ptf1Mat, ptf2Mat)
-    All_ptf_ids = All_rets
-    for row in 1:size(All_ptf_ids,1)
-        for col  in 1:size(All_ptf_ids,2)
-            All_ptf_ids[row,col] = missing
-        end
-    end
+    All_ptf_ids = Array{Union{Missing,Float64},2}(undef, size(All_rets,1), size(All_rets,2))
+    All_ptf_ids = convert(DataFrame, All_ptf_ids)
+    names!(All_ptf_ids, names(All_rets))
     @time for row in 1:size(ptf1Mat,1)
         for col  in 1:size(ptf1Mat,2)
             if !ismissing(ptf1Mat[row,col])
@@ -394,4 +391,81 @@ function idPtf(All_rets, ptf1Mat, ptf2Mat)
         end
     end
     return All_ptf_ids
+end
+
+
+function countmissing(myIter,nonmissings)
+    counter = 0
+    for row in 1:size(myIter,1)
+        for col in 1:size(myIter,2)
+            if nonmissings && !ismissing(myIter[row,col])
+                counter+=1
+            elseif !nonmissings && ismissing(myIter[row,col])
+                counter+=1
+            end
+        end
+    end
+    return counter
+end
+
+
+
+function constructRmatrix(finalSeriesDicBis, perlength, offset, finalSeriesDic, recentperiod)
+    recentperiod = recentperiod/perlength
+    foo = countmissing(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"], true) #ACHTUNG: weird number of total observations (+18M vs 22M??)
+    Rmatrix = Array{Union{Float64,Missing},2}(undef, foo, 23)
+    let i=1
+    for row in 1:size(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"],1)
+        print(row)
+        for col in 1:size(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"],2)
+            if !ismissing(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"][row, col])
+                Rmatrix[i, 1] = col
+                Rmatrix[i, 2] = row
+                Rmatrix[i, 3] = finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"][row, col]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+                Rmatrix[i, 4] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row, col]
+                row>1 ? Rmatrix[i, 5] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row-1, col] : Rmatrix[i, 5] = missing
+                row>2 ? Rmatrix[i, 6] = finalSeriesDicBis["sent_p$(perlength)_o$(offset)"][row-2, col] : Rmatrix[i, 6] = missing
+                Rmatrix[i, 7] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWret_HML][row]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+                Rmatrix[i, 8] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWret_ALL][row]-finalSeriesDic["res_p$(perlength)_o$(offset)"][:RF][row]
+                Rmatrix[i, 9] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_HML][row]
+                Rmatrix[i, 10] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_ALL][row]
+                Rmatrix[i, 11] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_H][row]
+                Rmatrix[i, 12] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_L][row]
+                row>1 ? Rmatrix[i, 13] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_H][row-1] : Rmatrix[i, 13] = missing
+                row>1 ? Rmatrix[i, 14] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:VWsent_L][row-1] : Rmatrix[i, 14] = missing
+                ismissing(finalSeriesDicBis["L_id_p$(perlength)_o$(offset)"][row, col]) ?  Rmatrix[i, 15] = 0 : Rmatrix[i, 15] = finalSeriesDicBis["L_id_p$(perlength)_o$(offset)"][row, col]
+                ismissing(finalSeriesDicBis["H_id_p$(perlength)_o$(offset)"][row, col]) ?  Rmatrix[i, 16] = 0 : Rmatrix[i, 16] = finalSeriesDicBis["H_id_p$(perlength)_o$(offset)"][row, col]
+                row>recentperiod ? Rmatrix[i, 17] = 1 : Rmatrix[i, 17] = 0
+                Rmatrix[i, 18] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:SMB][row]
+                Rmatrix[i, 19] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:HML][row]
+                Rmatrix[i, 20] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:Mkt_RF][row]
+                Rmatrix[i, 21] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:Mom][row]
+                Rmatrix[i, 22] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:RMW][row]
+                Rmatrix[i, 23] = finalSeriesDic["res_p$(perlength)_o$(offset)"][:CMA][row]
+                i+=1
+            end
+        end
+    end
+    end #let block
+    Rmatrix = convert(DataFrame, Rmatrix)
+    names!(Rmatrix, [:permno, :td, :ret_i_t, :sent_i_t, :sent_i_tl1, :sent_i_tl2, :ret_HML_t,
+                     :ret_Mkt_t, :sent_HML_t, :sent_Mkt_t, :sent_H_t, :sent_L_t, :sent_H_tl1,
+                     :sent_L_tl1, :isL, :isH, :isRecent, :SMB, :HML, :Mkt_RF, :Mom, :RMW, :CMA])
+    return Rmatrix
+end
+
+
+function regressionSessionR(Rmatrix)
+    Hmatrix =  Rmatrix[replace(Rmatrix[:isH], missing=>0) .== 1.0, :];
+    Lmatrix =  Rmatrix[replace(Rmatrix[:isH], missing=>0) .== 1.0, :];
+    @rput Rmatrix;
+    @rput Hmatrix;
+    @rput Lmatrix;
+    R"library(plm)";
+    R"library(stargazer)";
+    R"library(lmtest)";
+    R"A <- plm::pdata.frame(Rmatrix, index=c('permno', 'td'))";
+    R"H <- plm::pdata.frame(Hmatrix, index=c('permno', 'td'))";
+    R"L <- plm::pdata.frame(Lmatrix, index=c('permno', 'td'))";
+    return 0
 end
