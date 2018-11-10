@@ -140,6 +140,49 @@ merged_CRSP_CS = unique(merged_CRSP_CS)
 merged_CRSP_CS[[:permno, :gvkey, :date, :momrank, :rankbm]]
 
 
+
+################################
+# Earnings Announcemnt Dates   #
+################################
+print("Compute EAD")
+CSvariables = "gvkey, datadate, rdq" #addzip, city, conml, naicsh, state
+CSdatatable = "comp.fundq"
+EAdfq = CSdownload(CSdaterange, CSvariables, CSdatatable)
+EAdfq[:EAD] = 1
+EAdfq = EAdfq[[:gvkey, :rdq, :EAD]]
+deletemissingrows!(EAdfq, :rdq)
+rename!(EAdfq, :rdq => :dailydate)
+EAdfq[:gvkey] = map(x->parse(Int,x), EAdfq[:gvkey])
+EAdfq[:td]=missing
+EAdfq = EAdfq[(EAdfq[:dailydate].>=Dates.Date(2003,1,1)),:]
+EAdfq = EAdfq[(EAdfq[:dailydate].<=Dates.Date(2017,12,31)),:]
+EAdfq[:td] = map(x->trading_day(dates, x), EAdfq[:dailydate])
+
+merged_CRSP_CS = merged_CRSP_CS[(merged_CRSP_CS[:date].>=Dates.Date(2003,1,1)),:]
+merged_CRSP_CS = merged_CRSP_CS[(merged_CRSP_CS[:date].<=Dates.Date(2017,12,31)),:]
+merged_CRSP_CS[:td] = map(x->trading_day(dates, x), merged_CRSP_CS[:date])
+
+EAdfqfinal = join(EAdfq, merged_CRSP_CS[[:permno, :gvkey, :td]], kind=:inner, on=[:gvkey])
+delete!(EAdfqfinal, :td_1)
+EAdfqfinal = unique(EAdfqfinal)
+
+dbname = :Denada
+collname = :daily_CRSP_CS_TRNA
+@pyimport pymongo
+client = pymongo.MongoClient()
+db = client[dbname]
+mongo_collection = db[collname]
+
+for row in eachrow(EAdfqfinal)
+    mongo_collection[:update_one](
+    Dict("\$and"=> [
+                    Dict("permno"=>row[:permno]),
+                    Dict("td"=> row[:td])
+                    ]),
+    Dict("\$set"=>Dict("EAD"=>row[:EAD])))
+end
+
+
 annualratios = lineupDate!(annualratios, Dates.Month, :jdate, :datadate)
 annualratios = julyJuneDates!(annualratios);
 annualratios[:gvkey] = parse.(Int, annualratios[:gvkey]);
@@ -279,6 +322,28 @@ p=[0]
     end
     collection[:insert_one](insertDic)
 end;
+
+
+
+
+################################
+# Earnings Announcemnt Dates   #
+################################
+print("Compute EAD")
+CSvariables = "gvkey, datadate, rdq" #addzip, city, conml, naicsh, state
+CSdatatable = "comp.fundq"
+EAdfq = CSdownload(CSdaterange, CSvariables, CSdatatable)
+EAdfq[:EAD] = 1
+EAdfq = EAdfq[[:gvkey, :rdq, :EAD]]
+deletemissingrows!(EAdfq, :rdq)
+rename!(EAdfq, :rdq => :dailydate)
+EAdfq[:gvkey] = map(x->parse(Int,x), EAdfq[:gvkey])
+EAdfq[:td]=missing
+EAdfq = EAdfq[(EAdfq[:dailydate].>=Dates.Date(2003,1,1)),:]
+EAdfq = EAdfq[(EAdfq[:dailydate].<=Dates.Date(2017,12,31)),:]
+EAdfq[:td] = map(x->trading_day(dates, x), EAdfq[:dailydate])
+
+EAdfq = join(EAdfq, matched, kind=:left, on=[:gvkey])
 
 
 

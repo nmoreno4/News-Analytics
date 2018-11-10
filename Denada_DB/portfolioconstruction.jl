@@ -1,8 +1,8 @@
 push!(LOAD_PATH, "$(pwd())/CRSP_CS/WRDSmodules")
 push!(LOAD_PATH, "$(pwd())/Useful functions")
-using CSV, Missings, DataFrames, JLD2, Suppressor, RCall, Query, StatsBase, JuliaDB, IterableTables
-@rlibrary stlplus
-@rlibrary RPostgres
+using CSV, Missings, DataFrames, JLD2, RCall, StatsBase #, Query, Suppressor, JuliaDB, IterableTables
+# @rlibrary stlplus
+# @rlibrary RPostgres
 using usefulNestedDF, otherCleaning, customWRDSvariables, Portfolio_Sorting, WRDSdownload
 # import WRDSdownload: FF_factors_download
 import DFmanipulation: deletemissingrows!
@@ -223,8 +223,9 @@ ccm1[:gvkey] = map(parse, ccm1[:gvkey])
 matched = CSV.read("/home/nicolas/Data/permidmatch/matched.csv")
 deletemissingrows!(matched, Symbol("Match OpenPermID"))
 endstring = x -> x[end-9:end]
+matched = matched[(matched[Symbol("Match OpenPermID")].!="No Match"),:]
 matched[:permid] = map(endstring, matched[Symbol("Match OpenPermID")])
-matched[:permid] = map(parse, matched[:permid])
+matched[:permid] = map(x->parse(Int, x), matched[:permid])
 rename!(matched, :Input_LocalID => :gvkey)
 matched = matched[[:gvkey, :permid]]
 ccm1 = join(ccm1, matched, kind=:left, on=[:gvkey])
@@ -704,12 +705,38 @@ deletemissingrows!(Result, :monthlydate)
 print("Compute EAD")
 CSvariables = "gvkey, datadate, rdq" #addzip, city, conml, naicsh, state
 CSdatatable = "comp.fundq"
-EAdfq = WRDSdownload.CSdownload(CSdaterange, CSvariables, CSdatatable)
+EAdfq = CSdownload(CSdaterange, CSvariables, CSdatatable)
 EAdfq[:EAD] = 1
 EAdfq = EAdfq[[:gvkey, :rdq, :EAD]]
 deletemissingrows!(EAdfq, :rdq)
 rename!(EAdfq, :rdq => :dailydate)
-EAdfq[:gvkey] = map(parse, EAdfq[:gvkey])
+EAdfq[:gvkey] = map(x->parse(Int,x), EAdfq[:gvkey])
+EAdfq[:td]=missing
+EAdfq = EAdfq[(EAdfq[:dailydate].>=Dates.Date(2003,1,1)),:]
+EAdfq = EAdfq[(EAdfq[:dailydate].<=Dates.Date(2017,12,31)),:]
+EAdfq[:td] = map(x->trading_day(dates, x), EAdfq[:dailydate])
+
+EAdfq = join(EAdfq, matched, kind=:left, on=[:gvkey])
+
+dbname = :Denada
+collname = :daily_CRSP_CS_TRNA
+@pyimport pymongo
+client = pymongo.MongoClient()
+db = client[dbname]
+mongo_collection = db[collname]
+
+for row in eachrow(EAdfq)
+    collection[:update_one](
+    Dict("\$and"=> [
+                    Dict("permno"=>row[:permno]),
+                    Dict("td"=> row[:td])
+                    ]),
+    Dict("\$set"=>Dict("dailywt"=>row[:dailywt], "wt" => row[:wt], "ptf_2by3_size_value" => row[:ptf_2by3_size_value],
+                       "rankbm" => row[:rankbm], "ranksize" => row[:ranksize])))
+end
+
+
+
 Result = join(Result, EAdfq, kind=:left, on=[:dailydate, :gvkey])
 Result[[:monthlydate, :gvkey, :rankbm, :dailydate, :EAD]]
 for row in eachrow(Result)

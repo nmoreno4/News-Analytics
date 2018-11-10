@@ -62,8 +62,8 @@ H_id = idPtf(resDic["ALL"]["dailyretadj"], resDic["SH"]["dailyretadj"], resDic["
 
 #create big DFs
 finalSeriesDic = Dict()
-for perlength in [1,5,10,20,60]
-    @time for offset in [0,1,2,3]
+for perlength in [1,20]#[1,5,10,20,60]
+    @time for offset in [0]#[0,1,2,3]
         print("perlength: $perlength -/- offset: $offset\n")
         if offset<perlength
             finalSeriesDic["aggseriesDic_p$(perlength)_o$(offset)"] = aggSeriesToDic!(Dict(), resDic, ptfs, sentvar, nbstoriesvar, perlength, offset, wtvar, retvar)
@@ -79,11 +79,11 @@ for perlength in [1,5,10,20,60]
     end
 end
 
-JLD2.@save "/home/nicolas/Data/finalSeriesDic.jld2" finalSeriesDic
+# JLD2.@save "/home/nicolas/Data/finalSeriesDic.jld2" finalSeriesDic
 
 finalSeriesDicBis = Dict()
-for perlength in [1,5,10,20,60]
-    for offset in [0,1,2,3]
+for perlength in [1,20]#[1,5,10,20,60]
+    @time for offset in [0]#[0,1,2,3]
         print("perlength: $perlength -/- offset: $offset\n")
         @time if offset<perlength
             finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"] = aggperiod(resDic["ALL"]["dailyretadj"],"dummy", "dummy", perlength, cumret,offset)
@@ -95,7 +95,7 @@ for perlength in [1,5,10,20,60]
         end
     end
 end
-JLD2.@save "/home/nicolas/Data/finalSeriesDicBis.jld2" finalSeriesDicBis
+# JLD2.@save "/home/nicolas/Data/finalSeriesDicBis.jld2" finalSeriesDicBis
 
 
 perlength = 20
@@ -176,8 +176,8 @@ names!(FFfactors_p5_o0,[Symbol(String(x)[1:end-7]) for x in names(FFfactors_p5_o
 names!(FFfactors_p5_o1,[Symbol(String(x)[1:end-7]) for x in names(FFfactors_p5_o1)])
 names!(FFfactors_p1_o0,[Symbol(String(x)[1:end-7]) for x in names(FFfactors_p1_o0)])
 
-res = DataFrame(aggseriesDic)
-res = hcat(res, FFfactors_p5_o0)
+res = DataFrame(finalSeriesDic["aggseriesDic_p20_o0"])
+res = hcat(res, finalSeriesDic["FFfactors_p20_o0"])
 res10 = DataFrame(aggseriesDic01)
 res10 = hcat(res10, FFfactors_p5_o1)
 res1 = DataFrame(aggseriesDic_p1_o0)
@@ -187,7 +187,7 @@ foo = Dict("a"=>FFfactors10, "b"=>FFfactors10b)
 
 @rput foo
 R"(foo$a$CMA_cumret)"
-@rput res1
+@rput res
 R"res = monthlyres"
 R"mod = lm(res$VWret_L ~ res$VWsent_L + res$VWsent_HML + res$Mkt_RF + res$HML)"
 R"mod = lm(res$VWret_L[1:3775] ~ res$VWsent_L[2:3776] + res$VWsent_HML[2:3776] + res$Mkt_RF[2:3776] + res$HML[2:3776])"
@@ -199,16 +199,17 @@ R"plot(ret2tick(res$VWret_BL, 100), type='l')"
 R"lines(ret2tick(res$BLVW, 100), type='l', col=2)"
 R"lines(ret2tick(res$VWret_BL, 100), type='l', col=3)"
 R"lines(ret2tick(res$VWret_BH, 100), type='l', col=4)"
-R"plot(ret2tick(res1$VWret_ALL-res1$RF, 100), type='l', col=5)"
-R"lines(ret2tick(res1$Mkt_RF, 100), type='l', col=4)"
+R"plot(ret2tick(res$VWret_ALL-res$RF, 100), type='l', col=5)"
+R"lines(ret2tick(res$Mkt_RF, 100), type='l', col=4)"
 R"plot(ret2tick(res$HML, 100), type='l', col=1)"
-R"plot(ret2tick(res$VWret_HML, 100), type='l', col=4)"
+R"lines(ret2tick(res$VWret_HML, 100), type='l', col=4)"
 R"plot(ret2tick((res$VWret_BH+res$VWret_SH)/2, 100), type='l', col=1)"
 R"lines(ret2tick(res$HvalVW, 100), type='l', col=4)"
 R"lines(ret2tick((res$VWret_BL+res$VWret_SL)/2, 100), type='l', col=1)"
 R"lines(ret2tick(res$LvalVW, 100), type='l', col=4)"
 R"plot(ret2tick(res$VWret_L-res$VWret_H, 100), type='l', col=1)"
-R"plot(ret2tick(res$HML, 100), type='l', col=1)"
+R"plot(ret2tick(res$VWret_HML, 100), type='l', col=1)"
+R"lines(ret2tick(res$VWret_HML, 100), type='l', col=2)"
 R"plot(ret2tick(res$VWret_H, 100), type='l', col=1)"
 R"lines(ret2tick(res$HvalVW, 100), type='l', col=2)"
 

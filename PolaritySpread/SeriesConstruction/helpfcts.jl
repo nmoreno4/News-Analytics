@@ -1,4 +1,4 @@
-using DataFrames
+using DataFrames, RCall, DataFramesMeta
 
 # Find the most frequent character appearing in a tuple of strings
 function findFreqCharac(mytuple)
@@ -147,8 +147,8 @@ function queryDB(tdperiods, chosenVars, valR, sizeR, mongo_collection)
     uniqueTd = mongo_collection[:find](Dict("td"=>periodspan))[:distinct]("td")
     # Get all unique stock identifiers (permno) during the period
     uniquePermno = mongo_collection[:find](Dict("td"=>periodspan,
-                                                "rankbm"=>bmfilter,
-                                                "ranksize"=>sizefilter))[:distinct]("permno")
+                                                "bmdecile"=>bmfilter,
+                                                "sizedecile"=>sizefilter))[:distinct]("permno")
 
     #Create dataframes
     dfDict = Dict{String, DataFrame}()
@@ -158,8 +158,8 @@ function queryDB(tdperiods, chosenVars, valR, sizeR, mongo_collection)
 
     for td in tdperiods[1]:tdperiods[2]
         for filtDic in mongo_collection[:find](Dict("td"=>td,
-                                                    "rankbm"=>bmfilter,
-                                                    "ranksize"=>sizefilter),
+                                                    "bmdecile"=>bmfilter,
+                                                    "sizedecile"=>sizefilter),
                                                # Return only the variables we care about + the permno
                                                Dict(zip([chosenVars;"permno"], repeat([1],length(chosenVars)+1))))
             crtpermno = Int64(filtDic["permno"])
@@ -267,7 +267,14 @@ function weightsum(wMat, sMat, WS, ignoremissing)
             elseif WS == "EW"
                 a = missingmean(wrow)./missingsum(wrow).*srow
             end
-            a = Array{Float64,1}(a[findall(nonmissing,a)])
+            nonmissingIdx = findall(nonmissing,a)
+            # print(length(nonmissingIdx))
+            # print("\n\n")
+            try
+                a = Array{Float64,1}(a[nonmissingIdx])
+            catch
+                a = Float64[]
+            end
         end #if only use non-missing values
         push!(res, sum(a))
         push!(coveredMktCp, missingsum(wrow[findall(nonmissing,srow)]./missingsum(wrow)))
@@ -409,7 +416,7 @@ function countmissing(myIter,nonmissings)
 end
 
 
-
+####CAREFUL : Why do I have different numbers of Mom, HML, SMB, MKt-RF?
 function constructRmatrix(finalSeriesDicBis, perlength, offset, finalSeriesDic, recentperiod)
     recentperiod = recentperiod/perlength
     foo = countmissing(finalSeriesDicBis["retadj_p$(perlength)_o$(offset)"], true) #ACHTUNG: weird number of total observations (+18M vs 22M??)
@@ -456,8 +463,12 @@ end
 
 
 function regressionSessionR(Rmatrix)
-    Hmatrix =  Rmatrix[replace(Rmatrix[:isH], missing=>0) .== 1.0, :];
-    Lmatrix =  Rmatrix[replace(Rmatrix[:isH], missing=>0) .== 1.0, :];
+    Rmatrix[:isRecent] = replace(Rmatrix[:isRecent], missing=>0)
+    Rmatrix[:sent_i_t] = replace(Rmatrix[:sent_i_t], missing=>0)
+    Rmatrix[:isH] = replace(Rmatrix[:isH], missing=>0)
+    Rmatrix[:isL] = replace(Rmatrix[:isL], missing=>0)
+    Hmatrix =  Rmatrix[Rmatrix[:isH] .== 1.0, :];
+    Lmatrix =  Rmatrix[Rmatrix[:isL] .== 1.0, :];
     @rput Rmatrix;
     @rput Hmatrix;
     @rput Lmatrix;
@@ -467,5 +478,48 @@ function regressionSessionR(Rmatrix)
     R"A <- plm::pdata.frame(Rmatrix, index=c('permno', 'td'))";
     R"H <- plm::pdata.frame(Hmatrix, index=c('permno', 'td'))";
     R"L <- plm::pdata.frame(Lmatrix, index=c('permno', 'td'))";
+    return 0
+end
+
+
+function plm(ptf, freq, model, effect, usediff, lag_sent_Mkt, lag_sent_ptf, lag_sent_HML)
+    R"reg <- plm(testformula, data=eval(parse(text=$ptf)), model=$model, effect=$effect)";
+    R"ResultsReg[[paste('plm', $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, $model, $effect, sep='_')]] = reg"
+    R"ResultsReg[[paste('summary_plm', $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, $model, $effect, sep='_')]] = summary(reg)"
+end
+
+function hausmantest(ptf, freq, usediff, lag_sent_Mkt, lag_sent_ptf, lag_sent_HML)
+    R"htest = phtest(testformula, data=eval(parse(text=$ptf)), method='aux',
+                    vcov = vcovHC)"
+    R"ResultsReg[[paste('htest', $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = htest"
+end
+
+function adjustVcov(method, ptf, freq, model, effect, usediff, lag_sent_Mkt, lag_sent_ptf, lag_sent_HML)
+    R"a<-paste('plm', $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, $model, $effect, sep='_')"
+    if method=="NW"
+        R"temp.summ  <- summary(ResultsReg[[a]])"
+        R"temp.summ$coefficients <- unclass(coeftest(ResultsReg[[a]], vcov=vcovNW(ResultsReg[[a]])))"
+        R"ResultsReg[[paste('summary', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = temp.summ"
+    elseif method=="SCC"
+        R"temp.summ  <- summary(ResultsReg[[a]])"
+        R"temp.summ$coefficients <- unclass(coeftest(ResultsReg[[a]], vcov=vcovSCC(ResultsReg[[a]])))"
+        R"ResultsReg[[paste('summary', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = temp.summ"
+    end
+    return 0
+end
+
+function adjustVcovBis(method, ptf, freq, model, effect, usediff, lag_sent_Mkt, lag_sent_ptf, lag_sent_HML)
+    R"a<-paste('plm', $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, $model, $effect, sep='_')"
+    if method=="NW"
+        R"rob.fit1 <- coeftest(ResultsReg[[a]], vcov=vcovNW(ResultsReg[[a]]))"
+        R"summ.fit1 <- summary(rob.fit1, diagnostics=T)"
+        R"ResultsReg[[paste('coeftest', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = rob.fit1"
+        R"ResultsReg[[paste('summarycoeftest', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = summ.fit1"
+    elseif method=="SCC"
+        R"rob.fit1 <- coeftest(ResultsReg[[a]], vcov=vcovSCC(ResultsReg[[a]]))"
+        R"summ.fit1 <- summary(rob.fit1, diagnostics=T)"
+        R"ResultsReg[[paste('coeftest', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = rob.fit1"
+        R"ResultsReg[[paste('summarycoeftest', $method, $ptf, $freq, $usediff, $lag_sent_Mkt, $lag_sent_ptf, $lag_sent_HML, sep='_')]] = summ.fit1"
+    end
     return 0
 end
