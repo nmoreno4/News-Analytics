@@ -592,19 +592,26 @@ function queryDB_doublefilt_Dic(filtvars, tdperiods, chosenVars, v1Range, v2Rang
             filtDic["permno"] = Int64(filtDic["permno"])
             for var in chosenVars
                 if !(var in collect(keys(filtDic)))
-                    filtDic[var] = NaN
+                    filtDic[var] = missing
                 end
             end
-            resDic["$(td)_$(filtDic["permno"])"] = [collect(values(filtDic));td]
-            if keylabels == []
-                keylabels = [collect(keys(filtDic)); "td"]
-            elseif keylabels!=[collect(keys(filtDic)); "td"]
-                print([collect(keys(filtDic)); "td"])
-                print("sth weird happened")
+            resDic["$(td)_$(filtDic["permno"])"] = Array{Union{Missing, Float64}}(missing,length(chosenVars)+2)
+            i=0
+            for var in chosenVars
+                i+=1
+                try
+                    resDic["$(td)_$(filtDic["permno"])"][i] = filtDic[var]
+                catch myerr
+                    if myerr isa MethodError && filtDic[var] == nothing
+                        resDic["$(td)_$(filtDic["permno"])"][i] = missing
+                    end
+                end
             end
+            resDic["$(td)_$(filtDic["permno"])"][i+1] = filtDic["permno"]
+            resDic["$(td)_$(filtDic["permno"])"][i+2] = td
         end
     end
-    return resDic, keylabels
+    return resDic
 end
 
 
@@ -619,8 +626,8 @@ end
 
 
 function queryDic_to_df(a, keylabels)
-    b = @time DataFrame(a)
-    b = @time transposeDF(b)
+    b = DataFrame(a)
+    b = transposeDF(b)
     delete!(b, :variable)
     names!(b, [Symbol(x) for x in keylabels])
     return b
@@ -639,11 +646,15 @@ function custom_mean(X)
     X = convert(Array{Union{Float64,Missing}}, X)
     return mean(collect(skipmissing(X)))
 end
-function custom_sum(X)
+function custom_sum(X, retval=0)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    return sum(collect(skipmissing(X)))
+    if length(collect(skipmissing(X)))==0 && retval!==0
+        return retval
+    else
+        return sum(collect(skipmissing(X)))
+    end
 end
 function custom_skew(X)
     X = replace(X, missing=>NaN, nothing=>NaN)
@@ -667,13 +678,21 @@ function custom_max(X)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    return maximum(collect(skipmissing(X)))
+    try
+        return maximum(collect(skipmissing(X)))
+    catch
+        return missing
+    end
 end
 function custom_min(X)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    return minimum(collect(skipmissing(X)))
+    try
+        return minimum(collect(skipmissing(X)))
+    catch
+        return missing
+    end
 end
 function custom_median(X)
     X = replace(X, missing=>NaN, nothing=>NaN)
@@ -686,3 +705,222 @@ function custom_median(X)
     end
 end
 myrounding =x->round(x;digits=2)
+
+
+
+
+function df_custom_summary(dicDFs, ptfIDs, isindustries = false)
+    repDF = Dict("indus"=>[], "vol"=>[], "bm"=>[], "me"=>[], "ret"=>[], "nNews_S"=>[], "sent"=>[],
+                 "nbobs"=>[], "nPobs"=>[], "sentSTD"=>[], "sentSKEW"=>[], "sentKURT"=>[], "sentMED"=>[],
+                 "sent_all"=>[], "nbStories_all"=>[], "nbStoriesMAX_stock"=>[], "nbStoriesMIN_stock"=>[],
+                 "nbStoriesSTD_stock"=>[])
+    for id in ptfIDs
+        print(id)
+        if isindustries
+            id = id[1]
+        end
+        a = by(dicDFs[id], :permno) do df
+            DataFrame(vol = custom_mean(df.vol), bm = custom_mean(df.bm), ret = custom_mean(df.dailyretadj),
+                      me = custom_mean(df.me), nbStories = custom_sum(df.nbStories_rel100_nov24H),
+                      sent = custom_mean(df.sent_rel100_nov24H), nbobs = length(df.dailyretadj),
+                      sentSTD = custom_std(df.sent_rel100_nov24H), sentSKEW = custom_skew(df.sent_rel100_nov24H),
+                      sentKURT = custom_kurt(df.sent_rel100_nov24H), sentMED = custom_median(df.sent_rel100_nov24H),
+                      newsPerObs = custom_sum(df.nbStories_rel100_nov24H)/length(df.dailyretadj))
+        end
+        push!(repDF["indus"], id)
+        push!(repDF["vol"], round(custom_mean(a[:vol]);digits=0))
+        push!(repDF["bm"], round(custom_mean(a[:bm]);digits=2))
+        push!(repDF["me"], round(custom_mean(a[:me]);digits=0))
+        push!(repDF["ret"], round(((custom_mean(a[:ret])+1)^252-1)*100;digits=2))
+        push!(repDF["nNews_S"], round(custom_mean(a[:nbStories]);digits=0))
+        push!(repDF["sent"], round(custom_mean(a[:sent]);digits=2))
+        push!(repDF["nbobs"], round(custom_sum(a[:nbobs]);digits=0))
+        push!(repDF["nPobs"], round(custom_mean(a[:newsPerObs]);digits=2))
+        push!(repDF["sentSTD"], round(custom_mean(a[:sentSTD]);digits=2))
+        push!(repDF["sentSKEW"], round(custom_mean(a[:sentSKEW]);digits=2))
+        push!(repDF["sentKURT"], round(custom_mean(a[:sentKURT]);digits=2))
+        push!(repDF["sentMED"], round(custom_median(dicDFs[id][:sent_rel100_nov24H]);digits=2))
+        push!(repDF["sent_all"], round(custom_mean(dicDFs[id][:sent_rel100_nov24H]);digits=2))
+        push!(repDF["nbStories_all"], round(custom_sum(dicDFs[id][:nbStories_rel100_nov24H]);digits=2))
+        push!(repDF["nbStoriesMAX_stock"], round(custom_max(a[:nbStories]);digits=0))
+        push!(repDF["nbStoriesMIN_stock"], round(custom_min(a[:nbStories]);digits=0))
+        push!(repDF["nbStoriesSTD_stock"], round(custom_std(a[:nbStories]);digits=0))
+    end
+    repDF = DataFrame(repDF)
+    repDF = repDF[[:indus, :nNews_S, :sent, :me, :bm, :ret, :vol, :nbobs, :nPobs, :sentSTD, :sentSKEW,
+                   :sentKURT, :sentMED, :sent_all, :nbStories_all, :nbStoriesMAX_stock, :nbStoriesMIN_stock,
+                   :nbStoriesSTD_stock]]
+    return repDF
+end
+
+
+
+function custom_corr_mat(dicDFs, ptfIDs)
+    corrdic = Dict()
+    for id in ptfIDs
+        corrdic[id] = by(dicDFs[id], :td) do df
+            DataFrame(sent = custom_mean(df.sent_rel100_nov24H))
+        end
+    end
+    for id in corrdic
+        corrdic[id[1]] = sort(id[2], :td)
+    end
+    corrmat = ones(length(ptfIDs),length(ptfIDs))
+    corrmat = DataFrame(corrmat)
+    names!(corrmat, [Symbol(x) for x in ptfIDs])
+    for i in ptfIDs
+        row = 0
+        for j in ptfIDs
+            row+=1
+            corrmat[Symbol(i)][row] = cor(replace_nan(corrdic[i][:sent], 0), replace_nan(corrdic[j][:sent], 0))
+        end
+    end
+    return corrmat
+end
+
+
+function ret2tick(vec, val=100)
+    res = Float64[val]
+    for i in vec
+        if ismissing(i)
+            i=0
+        end
+        val*=(1+i)
+        push!(res, val)
+    end
+    return res
+end
+
+function cumret(vec)
+    prices = ret2tick(vec)
+    res = (prices[end]-prices[1])/prices[1]
+    if length(vec)>0
+        return res
+    else
+        return missing
+    end
+end
+
+
+function add_per_id!(b, tdpers, skippedpers=0)
+    b[:perid] = ones(length(b[:td]))
+    let w=1
+    for i in 1:length(b[:td])
+        if b[:td][i]<=tdpers[w]
+            b[:perid][i] = w+skippedpers
+        else
+            w+=1
+            b[:perid][i] = w+skippedpers
+        end
+    end
+    end
+    return b
+end
+
+
+function endPerIdx(freq = Dates.quarterofyear, startperiod=1, endperiod=3776) #week, month
+    datesvec = datesVec()
+    periodchange = map(x->freq(x), datesvec[startperiod+1:endperiod])-map(x->freq(x), datesvec[startperiod:endperiod-1])
+    islastdayofperiod = map(x->x!=0, [periodchange;1])
+    return findall(islastdayofperiod)
+end
+
+
+function aggperiod(DFs, freq = Dates.quarterofyear, startperiod=1, endperiod=3776)
+    ptfaggper = DataFrame(permno=[], perid=[], persent=[], pernbstories=[], cumret=[], EAD=[], wt=[], aggSent=[])
+    tdpers = endPerIdx(freq, startperiod, endperiod)
+    for permno in Set(DFs[:permno])
+        b = @where(DFs, :permno .== permno)
+        sort!(b, :td)
+        starttdpers = 1
+        for i in tdpers
+            if minimum(b[:td])<i
+                break
+            end
+            starttdpers+=1
+        end
+        endtdpers = length(tdpers)
+        addmax = false
+        for i in length(tdpers)-1:1
+            if maximum(b[:td])>=tdpers[i]
+                if maximum(b[:td])==tdpers[i]
+                    break
+                else
+                    addmax = true
+                end
+            end
+            endtdpers-=1
+        end
+        if addmax
+            crttdpers = [tdpers[starttdpers:endtdpers];maximum(b[:td])]
+        else
+            crttdpers = tdpers[starttdpers:endtdpers]
+        end
+        b = add_per_id!(b, crttdpers, starttdpers-1)
+        aggper = by(b, :perid) do df
+            DataFrame(permno=minimum(df.permno), persent = custom_sum(df.sent_rel100_nov24H, missing), pernbstories = custom_sum(df.nbStories_rel100_nov24H),
+                      cumret = cumret(df.dailyretadj), EAD = custom_max(df.EAD), wt = df.dailywt[end], perid = mean(df.perid))
+        end
+        delete!(aggper, :perid_1)
+        aggper[:aggSent] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[:persent] ./ aggper[:pernbstories]), missing)
+        ptfaggper = vcat(ptfaggper, aggper)
+    end
+    return ptfaggper
+end
+
+
+
+function EW_VW_series(aggDF)
+    wtSUM = by(aggDF, :perid) do df
+        DataFrame(wtSUM = custom_sum(df.wt))
+    end
+    wtSUM=Dict(zip(wtSUM[:perid], wtSUM[:wtSUM]))
+    df2 = @byrow! aggDF begin
+        @newcol wSent::Array{Union{Float64,Missing}}
+        @newcol wRet::Array{Union{Float64,Missing}}
+        @newcol wCov::Array{Union{Float64,Missing}}
+        :wSent = :aggSent*(:wt/wtSUM[:perid])
+        :wRet = :cumret*(:wt/wtSUM[:perid])
+        :wCov = :pernbstories*(:wt/wtSUM[:perid])
+    end
+    resDF = by(df2, :perid) do df
+        DataFrame(VWsent=custom_sum(df.wSent), VWret=custom_sum(df.wRet),
+                  VWcov=custom_sum(df.wCov), EWsent=custom_mean(df.aggSent),
+                  EWret=custom_mean(df.cumret), EWcov=custom_mean(df.pernbstories))
+    end
+    sort!(resDF, :perid)
+    return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
+end
+
+
+function maptd_per(freq, startperiod=1, endperiod=3776)
+    datesvec = datesVec()
+    periodchange = map(x->freq(x), datesvec[startperiod+1:endperiod])-map(x->freq(x), datesvec[startperiod:endperiod-1])
+    islastdayofperiod = map(x->x!=0, [periodchange;1])
+    tdper = Dict()
+    let per = 1
+    for d in 1:endperiod-startperiod+1
+        if islastdayofperiod[d]
+            tdper[per] = d
+            per+=1
+        end
+    end
+    end
+    return tdper
+end
+
+
+
+
+function add_aroundEAD!(ptfDF, around_EAD)
+    ptfDF[Symbol("aroundEAD$(around_EAD)")] = Array{Union{Float64,Missing}}(missing, length(ptfDF[:EAD]))
+    for subdf in groupby(ptfDF, :permno)
+        a = replace(subdf[:EAD], missing=>0)
+        b = convert(Array{Bool}, replace(subdf[:EAD], missing=>false, 1=>true))
+        furthestLag = [abs.(a[1:end-abs(minimum(collect(around_EAD)))]-a[abs(minimum(collect(around_EAD)))+1:end]); [0 for x in 1:abs(minimum(collect(around_EAD)))]]
+        furthestLag[findall(b)] .= 0
+        furthestLag = replace(runmax(furthestLag, maximum(collect(around_EAD))-minimum(collect(around_EAD))+1 ), 0=>missing)
+        subdf[Symbol("aroundEAD$(around_EAD)")] = furthestLag
+    end
+    return ptfDF
+end

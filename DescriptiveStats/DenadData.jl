@@ -39,112 +39,79 @@ industryIDdic = Dict("Energy"=>(1010,1499),
                      "Real Estate"=>(6010,6499))
 
 
-
+######### BM/Size 25 ptfs ##########
 quintileDic = Dict()
 for val in 1:5
     @time for sz in 1:5
-        quintileDic[val*10+sz] = queryDB(tdperiods, chosenVars, (val*2-1, val*2), (sz*2-1, sz*2), mongo_collection)
+        quintileDic[val*10+sz] = queryDB_doublefilt_Dic(["bmdecile", "sizedecile"], tdperiods, chosenVars, (val*2-1, val*2), (sz*2-1, sz*2), mongo_collection)
     end
 end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_quintileDic.jld2" quintileDic
-quintileDicbis = Dict()
-for val in 1:5
-    @time for sz in 1:5
-        quintileDicbis[val*10+sz] = queryDB_doublefilt_Dic(["bmdecile", "sizedecile"], tdperiods, chosenVars, (val*2-1, val*2), (sz*2-1, sz*2), mongo_collection)
-    end
+# JLD2.@save "/run/media/nicolas/Research/SummaryStats/quintileDicbis.jld2" quintileDicbis
+quintileids = [x*10+y for x in 1:5 for y in 1:5]
+# Transform Dic to DF
+quintileDFs = Dict()
+for id in quintileids
+    quintileDFs[id] = queryDic_to_df(quintileDic[id][1], quintileDic[id][2])
 end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/quintileDicbis.jld2" quintileDicbis
-# industDicbis = Dict()
-# for indus in industryIDdic
-#     @time industDicbis[indus[1]] = queryDB_singlefilt_Dic("ggroup", tdperiods, chosenVars, indus[2], mongo_collection)
-# end
+# JLD2.@save  "/run/media/nicolas/Research/SummaryStats/D_quintileDFs.jld2" quintileDFs
+# Save final DF
+repdf =  df_custom_summary(quintileDFs, quintileids, false)
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_quintiles_df.csv", repdf)
+#correlation matrix
+corrmat = custom_corr_mat(quintileDFs, quintileids)
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_quintiles_corrmat.csv", corrmat)
 
 
+######### Industries ########
+# Gather data from MongoDB
 industDic = Dict()
 for indus in industryIDdic
-    @time industDic[indus[1]] = queryDB_singlefilt("ggroup", tdperiods, chosenVars, indus[2], mongo_collection)
+    @time industDic[indus[1]] = queryDB_singlefilt_Dic("ggroup", tdperiods, chosenVars, indus[2], mongo_collection)
 end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_industDic.jld2" industDic
-
-industDicbis = Dict()
-for indus in industryIDdic
-    @time industDicbis[indus[1]] = queryDB_singlefilt_Dic("ggroup", tdperiods, chosenVars, indus[2], mongo_collection)
-end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_industDicbis.jld2" industDicbis
-using FileIO
-FileIO.save("/run/media/nicolas/Research/SummaryStats/D_industDicbis.jld2", industDicbis)
-JLD2.@save  "/run/media/nicolas/Research/SummaryStats/D_industDicbis.jld2" industDicbis
-
+# Transform Dic to DF
 industryDFs = Dict()
 for indus in industryIDdic
-    print(indus[1])
-    if !(indus[1] in ["Health Care", "Financials"])
-        industryDFs[indus[1]] = queryDic_to_df(industDicbis[indus[1]][1], industDicbis[indus[1]][2])
-    end
+    industryDFs[indus[1]] = queryDic_to_df(industDic[indus[1]][1], industDic[indus[1]][2])
 end
-JLD2.@save  "/run/media/nicolas/Research/SummaryStats/D_industryDFs.jld2" industryDFs
+# JLD2.@save  "/run/media/nicolas/Research/SummaryStats/D_industryDFs.jld2" industryDFs
 
-repDF = Dict("indus"=>[], "vol"=>[], "bm"=>[], "me"=>[], "ret"=>[], "nNews_S"=>[], "sent"=>[],
-             "nbobs"=>[], "nPobs"=>[], "sentSTD"=>[], "sentSKEW"=>[], "sentKURT"=>[], "sentMED"=>[],
-             "sent_all"=>[], "nbStories_all"=>[], "nbStoriesMAX_stock"=>[], "nbStoriesMIN_stock"=>[],
-             "nbStoriesSTD_stock"=>[])
-for indus in industryIDdic
-    a = by(industryDFs[indus[1]], :permno) do df
-        DataFrame(vol = custom_mean(df.vol), bm = custom_mean(df.bm), ret = custom_mean(df.dailyretadj),
-                  me = custom_mean(df.me), nbStories = custom_sum(df.nbStories_rel100_nov24H),
-                  sent = custom_mean(df.sent_rel100_nov24H), nbobs = length(df.dailyretadj),
-                  sentSTD = custom_std(df.sent_rel100_nov24H), sentSKEW = custom_skew(df.sent_rel100_nov24H),
-                  sentKURT = custom_kurt(df.sent_rel100_nov24H), sentMED = custom_median(df.sent_rel100_nov24H),
-                  newsPerObs = custom_sum(df.nbStories_rel100_nov24H)/length(df.dailyretadj))
-    end
-    push!(repDF["indus"], indus[1])
-    push!(repDF["vol"], round(custom_mean(a[:vol]);digits=0))
-    push!(repDF["bm"], round(custom_mean(a[:bm]);digits=2))
-    push!(repDF["me"], round(custom_mean(a[:me]);digits=0))
-    push!(repDF["ret"], round(((custom_mean(a[:ret])+1)^252-1)*100;digits=2))
-    push!(repDF["nNews_S"], round(custom_mean(a[:nbStories]);digits=0))
-    push!(repDF["sent"], round(custom_mean(a[:sent]);digits=2))
-    push!(repDF["nbobs"], round(custom_sum(a[:nbobs]);digits=0))
-    push!(repDF["nPobs"], round(custom_mean(a[:newsPerObs]);digits=2))
-    push!(repDF["sentSTD"], round(custom_mean(a[:sentSTD]);digits=2))
-    push!(repDF["sentSKEW"], round(custom_mean(a[:sentSKEW]);digits=2))
-    push!(repDF["sentKURT"], round(custom_mean(a[:sentKURT]);digits=2))
-    push!(repDF["sentMED"], round(custom_median(industryDFs[indus[1]][:sent_rel100_nov24H]);digits=2))
-    push!(repDF["sent_all"], round(custom_mean(industryDFs[indus[1]][:sent_rel100_nov24H]);digits=2))
-    push!(repDF["nbStories_all"], round(custom_sum(industryDFs[indus[1]][:nbStories_rel100_nov24H]);digits=2))
-    push!(repDF["nbStoriesMAX_stock"], round(custom_max(a[:nbStories]);digits=0))
-    push!(repDF["nbStoriesMIN_stock"], round(custom_min(a[:nbStories]);digits=0))
-    push!(repDF["nbStoriesSTD_stock"], round(custom_std(a[:nbStories]);digits=0))
-end
-repdf = DataFrame(repDF)
-repdf = repdf[[:indus, :nNews_S, :sent, :me, :bm, :ret, :vol, :nbobs, :nPobs, :sentSTD, :sentSKEW,
-               :sentKURT, :sentMED, :sent_all, :nbStories_all, :nbStoriesMAX_stock, :nbStoriesMIN_stock,
-               :nbStoriesSTD_stock]]
-CSV.write("/run/media/nicolas/Research/SummaryStats/D_rindustry_df.csv", repdf)
-@rput repDF
-R"library(Hmisc)"
-R"X = latex(repDF, file='')"
-@rget X
+repdf =  df_custom_summary(industryDFs, industryIDdic, true)
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_industry_df.csv", repdf)
+#correlation matrix
+corrmat = custom_corr_mat(repdf, collect(keys(industryIDdic)))
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_industry_corrmat.csv", corrmat)
 
+
+###### Momentum ########
 momDic = Dict()
 for mom in 1:10
-    @time momDic[mom] = queryDB_singlefilt("momrank", tdperiods, chosenVars, (mom,mom), mongo_collection)
-end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_momDic.jld2" momDic
-momDicbis = Dict()
-for mom in 1:10
     print(mom)
-    @time momDicbis[mom] = queryDB_singlefilt_Dic("momrank", tdperiods, chosenVars, (mom,mom), mongo_collection)
+    @time momDic[mom] = queryDB_singlefilt_Dic("momrank", tdperiods, chosenVars, (mom,mom), mongo_collection)
 end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_momDic.jld2" momDicbis
+# JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_momDic.jld2" momDicbis
+# Transform Dic to DF
+momDFs = Dict()
+for id in 1:10
+    print(id)
+    momDFs[id] = queryDic_to_df(momDic[id][1], momDic[id][2])
+end
+# JLD2.@save  "/run/media/nicolas/Research/SummaryStats/D_momDFs.jld2" momDFs
+# Save final DF
+repdf =  df_custom_summary(momDFs, 1:10, false)
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_mom_df.csv", repdf)
+
+corrmat = custom_corr_mat(repdf, 1:10)
+CSV.write("/run/media/nicolas/Research/SummaryStats/D_mom_corrmat.csv", corrmat)
 
 
 
 
 
-
-
-
+#########################################################################################
+#########################################################################################
+############################ Topic news summary Stats ###################################
+#########################################################################################
+#########################################################################################
 
 topics = ["AAA", "ACCI", "ALLCE", "BACT", "BKRFIG", "BKRT", "BONS", "BOSS1",
           "BUYB", "CASE1", "CEO1", "CFO1", "CHAIR1", "CLASS", "CM1", "CMPNY",
@@ -187,14 +154,14 @@ end
 topics_summary = res
 JLD2.@save "/run/media/nicolas/Research/SummaryStats/D_topics_summary.jld2" topics_summary
 
-a = NaNMath.mean_count(by(mdf, :permno, mdf -> custom_std(mdf.dailyretadj))[:x1])
-b = NaNMath.mean_count(by(mdf, :permno, mdf -> custom_mean(mdf.dailyretadj))[:x1])
-a[1]*252
-((b[1]+1)^252-1)*100
-((NaNMath.mean(convert(Array{Float64}, mdf[:dailyretadj]))+1)^252-1)*100
-
-topic_df_summary= DataFrame(topics_summary)
-topic_df_summary = transposeDF(topic_df_summary)
+# a = NaNMath.mean_count(by(mdf, :permno, mdf -> custom_std(mdf.dailyretadj))[:x1])
+# b = NaNMath.mean_count(by(mdf, :permno, mdf -> custom_mean(mdf.dailyretadj))[:x1])
+# a[1]*252
+# ((b[1]+1)^252-1)*100
+# ((NaNMath.mean(convert(Array{Float64}, mdf[:dailyretadj]))+1)^252-1)*100
+#
+# topic_df_summary= DataFrame(topics_summary)
+# topic_df_summary = transposeDF(topic_df_summary)
 
 let topic_df_summary = DataFrame(bm=[], me=[], nbstories=[], ret=[], sent=[], vol=[], volume=[])
 for topic in topics_summary
