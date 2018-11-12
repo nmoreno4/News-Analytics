@@ -6,9 +6,9 @@ chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_
               "EAD"]
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
-tdperiods = (1,300) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
+tdperiods = (1,200) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
 
-using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates, DataFramesMeta, JLD2
+using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates, DataFramesMeta, JLD2, RollingFunctions
 
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
@@ -32,33 +32,37 @@ for id in quintileids
     quintileDFs[id] = queryDic_to_df(quintileDic[id], [chosenVars; "permno"; "td"])
 end
 
-id = 41
-around_EAD = -2:1:2
-quintileDFs[52] = add_aroundEAD!(quintileDFs[52], around_EAD)
+around_EAD = -1:1:1
+for ptf in quintileids
+    quintileDFs[ptf] = add_aroundEAD!(quintileDFs[ptf], around_EAD)
+end
+#Symbol("aroundEAD$(around_EAD)")
 
 operationsDic = Dict()
-colnames = Symbol[:retmean, :sentmean]
-varnames = Symbol[:dailyretadj, :sent_rel100_nov24H]
-operationsDic["means"] = [custom_mean, colnames, varnames]
-operationsDic["means"] = [custom_mean, colnames, varnames]
-aggper = by(quintileDFs[52], :permno) do df
-    # colIDs = Dict()
-    res = Dict()
-    for i in 1:length(operationsDic["means"][2])
-        res[operationsDic["means"][2][i]] = operationsDic["means"][1](df[operationsDic["means"][3][i]])
-    end
-    DataFrame(res)
-end
-d = Dict{Symbol,Any}(:a=>5.0,:b=>2,:c=>"Hi!")
-@unpack a, c = d
+operationsDic["sums"] = [custom_sum_missing,
+                            [:sum_perSent_, :sum_perNbStories_],
+                            [:sent_rel100_nov24H, :nbStories_rel100_nov24H]]
+operationsDic["lastels"] = [getlast,
+                            [:permno, :wt, :perid],
+                            [:permno, :dailywt, :perid]]
+operationsDic["cumrets"] = [cumret,
+                            [:cumret],
+                            [:dailyretadj]]
+operationsDic["maxs"] = [custom_max,
+                            [:EAD, Symbol("aroundEAD$(around_EAD)")],
+                            [:EAD, Symbol("aroundEAD$(around_EAD)")]]
+newstopics = [""] #["", "RES"]
 
-weeklys = Dict()
-monthlys = Dict()
-quarterlys = Dict()
-dailys = Dict()
-for freq in [Dates.month, Dates.week, Dates.day]#Dates.quarterofyear,
+# weeklys = Dict()
+# monthlys = Dict()
+# quarterlys = Dict()
+# dailys = Dict()
+include("$(laptop)/DescriptiveStats/helpfcts.jl")
+for freq in [Dates.quarterofyear]#[Dates.month, Dates.week, Dates.day]##Dates.quarterofyear,
+    aggDicFreq = Dict()
     @time for ptf in quintileids
-        aggDF = aggperiod(quintileDFs[ptf], freq, tdperiods[1], tdperiods[2])
+        print(ptf)
+        aggDF = aggperiod(quintileDFs[ptf], operationsDic, newstopics, freq, tdperiods[1], tdperiods[2])
 
         tdper = maptd_per(freq, tdperiods[1], tdperiods[2])
 
@@ -77,6 +81,7 @@ for freq in [Dates.month, Dates.week, Dates.day]#Dates.quarterofyear,
                 ranges[i] = tdper[i]+eventwindow[1]:tdper[i]+eventwindow[2]
             end
             aggDF[Symbol(eventwindow)] = Array{Union{Missing, Float64},1}(missing, length(aggDF[:perid]))
+            sort!(aggDF, [:permno, :perid])
             for crtpermno in Set(quintileDFs[ptf][:permno])
                 res = Dict()
                 b = @where(quintileDFs[ptf], :permno .== crtpermno)
@@ -89,26 +94,49 @@ for freq in [Dates.month, Dates.week, Dates.day]#Dates.quarterofyear,
                 end
             end
         end
-        if freq==Dates.week
-            weeklys[ptf] = aggDF
-        elseif freq==Dates.month
-            monthlys[ptf] = aggDF
-        elseif freq==Dates.quarterofyear
-            quarterlys[ptf] = aggDF
-        elseif freq==Dates.day
-            dailys[ptf] = aggDF
-        end
+        aggDicFreq[ptf] = aggDF
+        # if freq==Dates.week
+        #     weeklys[ptf] = aggDF
+        # elseif freq==Dates.month
+        #     monthlys[ptf] = aggDF
+        # elseif freq==Dates.quarterofyear
+        #     quarterlys[ptf] = aggDF
+        # elseif freq==Dates.day
+        #     dailys[ptf] = aggDF
+        # end
+        break
     end
+    # JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/quintiles_$(freq)_$(tdperiods).jld" aggDicFreq
 end
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_weekly.jld" weeklys
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_monthly.jld" monthlys
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_quarterly.jld" quarterlys
-JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_daily.jld" dailys
 
+JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_daily_300.jld" dailys
+JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_weekly_300.jld" weeklys
+JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_monthly_300.jld" monthlys
+JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_quarterly_300.jld" quarterlys
 
-a = @time EW_VW_series(bar)
+JLD2.@load "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_monthly_300.jld"
+monthlys[54][:EAD] = replace(monthlys[54][:EAD], missing=>0)
+custom_mean(monthlys[54][(monthlys[54][:EAD].==1), :aggSent_])
+
+include("$(laptop)/DescriptiveStats/helpfcts.jl")
+a = @time EW_VW_series(monthlys[43], [:w_aggSent_, :w_cumret, :w_aggCov], [:aggSent_, :cumret, :sum_perNbStories_])
 
 using RCall
 X = a[:VWsent]
 @rput X
 R"plot(X)"
+
+for (i,j) in zip([1,1,1], [2,3,4])
+    print("$i - $j")
+end
+
+
+@time let
+foo[:lol] = 0
+emptied = foo[1,:]
+deleterows!(emptied,1)
+for permno in Set(foo[:permno])
+    a = @where(foo, :permno .== permno)
+    emptied = vcat(emptied, a)
+end
+end

@@ -1,4 +1,4 @@
-using RCall, Statistics, StatsBase, TimeZones, Dates
+using RCall, Statistics, StatsBase, TimeZones, Dates, RollingFunctions
 include("/home/nicolas/github/News-Analytics/Denada_DB/WRDS/WRDSdownload.jl")
 
 function sent_ret_series(sentMat, wMat, retMat, nbstoriesMat, ignoremissing=false)
@@ -640,13 +640,37 @@ function custom_std(X)
     X = convert(Array{Union{Float64,Missing}}, X)
     return std(collect(skipmissing(X)))
 end
-function custom_mean(X)
+function custom_mean(X, retval=0)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    return mean(collect(skipmissing(X)))
+    if length(collect(skipmissing(X)))==0 && retval!==0
+        return retval
+    else
+        return mean(collect(skipmissing(X)))
+    end
+end
+function custom_mean_missing(X, retval=missing)
+    X = replace(X, missing=>NaN, nothing=>NaN)
+    X = replace(X, NaN=>missing)
+    X = convert(Array{Union{Float64,Missing}}, X)
+    if length(collect(skipmissing(X)))==0 && retval!==0
+        return retval
+    else
+        return mean(collect(skipmissing(X)))
+    end
 end
 function custom_sum(X, retval=0)
+    X = replace(X, missing=>NaN, nothing=>NaN)
+    X = replace(X, NaN=>missing)
+    X = convert(Array{Union{Float64,Missing}}, X)
+    if length(collect(skipmissing(X)))==0 && retval!==0
+        return retval
+    else
+        return sum(collect(skipmissing(X)))
+    end
+end
+function custom_sum_missing(X, retval=missing)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
@@ -704,7 +728,8 @@ function custom_median(X)
         return missing
     end
 end
-myrounding =x->round(x;digits=2)
+myrounding = x->round(x;digits=2)
+getlast = x->x[end]
 
 
 
@@ -826,8 +851,18 @@ function endPerIdx(freq = Dates.quarterofyear, startperiod=1, endperiod=3776) #w
 end
 
 
-function aggperiod(DFs, freq = Dates.quarterofyear, startperiod=1, endperiod=3776)
-    ptfaggper = DataFrame(permno=[], perid=[], persent=[], pernbstories=[], cumret=[], EAD=[], wt=[], aggSent=[])
+function aggperiod(DFs, operationsDic, newstopics, freq = Dates.quarterofyear, startperiod=1, endperiod=3776)
+    ptfaggper = Dict()
+    for i in operationsDic
+        for j in i[2][2]
+            ptfaggper[j] = []
+        end
+    end
+    for top in newstopics
+        ptfaggper[Symbol("aggSent_$(top)")] = []
+    end
+    ptfaggper = DataFrame(ptfaggper)
+    # ptfaggper = DataFrame(permno=[], perid=[], persent=[], pernbstories=[], cumret=[], EAD=[], wt=[], aggSent=[])
     tdpers = endPerIdx(freq, startperiod, endperiod)
     for permno in Set(DFs[:permno])
         b = @where(DFs, :permno .== permno)
@@ -858,11 +893,20 @@ function aggperiod(DFs, freq = Dates.quarterofyear, startperiod=1, endperiod=377
         end
         b = add_per_id!(b, crttdpers, starttdpers-1)
         aggper = by(b, :perid) do df
-            DataFrame(permno=minimum(df.permno), persent = custom_sum(df.sent_rel100_nov24H, missing), pernbstories = custom_sum(df.nbStories_rel100_nov24H),
-                      cumret = cumret(df.dailyretadj), EAD = custom_max(df.EAD), wt = df.dailywt[end], perid = mean(df.perid))
+            res = Dict()
+            for opDic in operationsDic
+                for i in 1:length(operationsDic[opDic[1]][2])
+                    res[operationsDic[opDic[1]][2][i]] = operationsDic[opDic[1]][1](df[operationsDic[opDic[1]][3][i]])
+                end
+            end
+            DataFrame(res)
+            # DataFrame(permno=minimum(df.permno), persent = custom_sum(df.sent_rel100_nov24H, missing), pernbstories = custom_sum(df.nbStories_rel100_nov24H),
+            #           cumret = cumret(df.dailyretadj), EAD = custom_max(df.EAD), wt = df.dailywt[end], perid = mean(df.perid))
         end
         delete!(aggper, :perid_1)
-        aggper[:aggSent] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[:persent] ./ aggper[:pernbstories]), missing)
+        for top in newstopics
+            aggper[Symbol("aggSent_$(top)")] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[Symbol("sum_perSent_$(top)")] ./ aggper[Symbol("sum_perNbStories_$(top)")]), missing)
+        end
         ptfaggper = vcat(ptfaggper, aggper)
     end
     return ptfaggper
@@ -870,26 +914,33 @@ end
 
 
 
-function EW_VW_series(aggDF)
-    wtSUM = by(aggDF, :perid) do df
+function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
+    wtSUM = by(aggDF, perSymb) do df
         DataFrame(wtSUM = custom_sum(df.wt))
     end
-    wtSUM=Dict(zip(wtSUM[:perid], wtSUM[:wtSUM]))
-    df2 = @byrow! aggDF begin
-        @newcol wSent::Array{Union{Float64,Missing}}
-        @newcol wRet::Array{Union{Float64,Missing}}
-        @newcol wCov::Array{Union{Float64,Missing}}
-        :wSent = :aggSent*(:wt/wtSUM[:perid])
-        :wRet = :cumret*(:wt/wtSUM[:perid])
-        :wCov = :pernbstories*(:wt/wtSUM[:perid])
+    wtSUM=Dict(zip(wtSUM[perSymb], wtSUM[:wtSUM]))
+    # print(@with(aggDF, cols(sentSymb) + cols(wt)))
+    for ncol in newcols
+        aggDF[ncol] = Array{Union{Float64,Missing}}(missing, length(aggDF[:perid]))
     end
-    resDF = by(df2, :perid) do df
-        DataFrame(VWsent=custom_sum(df.wSent), VWret=custom_sum(df.wRet),
-                  VWcov=custom_sum(df.wCov), EWsent=custom_mean(df.aggSent),
-                  EWret=custom_mean(df.cumret), EWcov=custom_mean(df.pernbstories))
+    df2 = @byrow! aggDF begin
+        @newcol wtSUM::Array{Union{Float64,Missing}}
+        :wtSUM = wtSUM[:perid]
+    end
+    for (symb, coln) in zip(symbs, newcols)
+        df2[coln] = @with(df2, cols(symb) .* (cols(wt) ./ cols(:wtSUM)) )
+    end
+    resDF = by(df2, perSymb) do df
+        res = Dict()
+        for (symb, coln) in zip(symbs, newcols)
+            res[Symbol("VW_$(symb)")] = custom_sum(df[coln])
+            res[Symbol("EW_$(symb)")] = custom_mean(df[symb])
+        end
+        DataFrame(res)
     end
     sort!(resDF, :perid)
-    return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
+    return resDF
+    # return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
 end
 
 
