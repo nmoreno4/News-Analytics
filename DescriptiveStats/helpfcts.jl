@@ -862,55 +862,137 @@ function aggperiod(DFs, operationsDic, newstopics, freq = Dates.quarterofyear, s
         ptfaggper[Symbol("aggSent_$(top)")] = []
     end
     ptfaggper = DataFrame(ptfaggper)
-    # ptfaggper = DataFrame(permno=[], perid=[], persent=[], pernbstories=[], cumret=[], EAD=[], wt=[], aggSent=[])
-    tdpers = endPerIdx(freq, startperiod, endperiod)
-    for permno in Set(DFs[:permno])
-        b = @where(DFs, :permno .== permno)
-        sort!(b, :td)
-        starttdpers = 1
-        for i in tdpers
-            if minimum(b[:td])<i
-                break
-            end
-            starttdpers+=1
-        end
-        endtdpers = length(tdpers)
-        addmax = false
-        for i in length(tdpers)-1:1
-            if maximum(b[:td])>=tdpers[i]
-                if maximum(b[:td])==tdpers[i]
-                    break
+    orignames = Symbol[]
+    newnames = Symbol[]
+    if freq==Dates.day
+        for opDic in operationsDic
+            for i in 1:length(operationsDic[opDic[1]][2])
+                crtcolname = operationsDic[opDic[1]][2][i]
+                crtorigVar = operationsDic[opDic[1]][3][i]
+                if crtorigVar != :perid
+                    push!(orignames, crtorigVar)
+                    push!(newnames, crtcolname)
                 else
-                    addmax = true
+                    push!(orignames, :td)
+                    push!(newnames, :perid)
                 end
             end
-            endtdpers-=1
         end
-        if addmax
-            crttdpers = [tdpers[starttdpers:endtdpers];maximum(b[:td])]
-        else
-            crttdpers = tdpers[starttdpers:endtdpers]
-        end
-        b = add_per_id!(b, crttdpers, starttdpers-1)
-        aggper = by(b, :perid) do df
-            res = Dict()
-            for opDic in operationsDic
-                for i in 1:length(operationsDic[opDic[1]][2])
-                    res[operationsDic[opDic[1]][2][i]] = operationsDic[opDic[1]][1](df[operationsDic[opDic[1]][3][i]])
-                end
-            end
-            DataFrame(res)
-            # DataFrame(permno=minimum(df.permno), persent = custom_sum(df.sent_rel100_nov24H, missing), pernbstories = custom_sum(df.nbStories_rel100_nov24H),
-            #           cumret = cumret(df.dailyretadj), EAD = custom_max(df.EAD), wt = df.dailywt[end], perid = mean(df.perid))
-        end
-        delete!(aggper, :perid_1)
+        b = DFs[orignames]
+        names!(b, newnames)
         for top in newstopics
-            aggper[Symbol("aggSent_$(top)")] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[Symbol("sum_perSent_$(top)")] ./ aggper[Symbol("sum_perNbStories_$(top)")]), missing)
+            b[Symbol("aggSent_$(top)")] = replace_nan(convert(Array{Union{Float64, Missing}}, b[Symbol("sum_perSent_$(top)")] ./ b[Symbol("sum_perNbStories_$(top)")]), missing)
         end
-        ptfaggper = vcat(ptfaggper, aggper)
+        ptfaggper = b
     end
+
+    # ptfaggper = DataFrame(permno=[], perid=[], persent=[], pernbstories=[], cumret=[], EAD=[], wt=[], aggSent=[])
+    if freq != Dates.day
+        tdpers = endPerIdx(freq, startperiod, endperiod)
+        for permno in Set(DFs[:permno])
+            b = @where(DFs, :permno .== permno)
+            sort!(b, :td)
+            starttdpers = 1
+            for i in tdpers
+                if minimum(b[:td])<i
+                    break
+                end
+                starttdpers+=1
+            end
+            endtdpers = length(tdpers)
+            addmax = false
+            for i in length(tdpers)-1:1
+                if maximum(b[:td])>=tdpers[i]
+                    if maximum(b[:td])==tdpers[i]
+                        break
+                    else
+                        addmax = true
+                    end
+                end
+                endtdpers-=1
+            end
+            if addmax
+                crttdpers = [tdpers[starttdpers:endtdpers];maximum(b[:td])]
+            else
+                crttdpers = tdpers[starttdpers:endtdpers]
+            end
+            b = add_per_id!(b, crttdpers, starttdpers-1)
+
+
+            # changesinperid = perchangerows(b[:perid])
+            # for j in 2:length(changesinperid)
+            #     res = Dict()
+            #     for opDic in operationsDic
+            #         for i in 1:length(operationsDic[opDic[1]][2])
+            #             crtfct = operationsDic[opDic[1]][1]
+            #             crtcolname = operationsDic[opDic[1]][2][i]
+            #             crtorigVar = b[j-1:j, operationsDic[opDic[1]][3][i]]
+            #             res[crtcolname] = crtfct(crtorigVar)
+            #         end
+            #     end
+            #     for top in newstopics
+            #         res[Symbol("aggSent_$(top)")] = custom_replace_nan(convert(Union{Float64, Missing}, res[Symbol("sum_perSent_$(top)")] / res[Symbol("sum_perNbStories_$(top)")]), missing)
+            #     end
+            #     ptfaggper = vcat(ptfaggper, DataFrame(res))
+            # end
+
+
+            # for crtperid in Set(b[:perid])
+            #     cdf = @where(b, :perid .== crtperid)
+            #     res = Dict()
+            #     for opDic in operationsDic
+            #         for i in 1:length(operationsDic[opDic[1]][2])
+            #             crtfct = operationsDic[opDic[1]][1]
+            #             crtcolname = operationsDic[opDic[1]][2][i]
+            #             crtorigVar = cdf[operationsDic[opDic[1]][3][i]]
+            #             res[crtcolname] = crtfct(crtorigVar)
+            #         end
+            #     end
+            #     aggper = DataFrame(res)
+            #     for top in newstopics
+            #         aggper[Symbol("aggSent_$(top)")] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[Symbol("sum_perSent_$(top)")] ./ aggper[Symbol("sum_perNbStories_$(top)")]), missing)
+            #     end
+            #     ptfaggper = vcat(ptfaggper, aggper)
+            # end
+
+
+            aggper = by(b, :perid) do df
+                res = Dict()
+                for opDic in operationsDic
+                    for i in 1:length(operationsDic[opDic[1]][2])
+                        res[operationsDic[opDic[1]][2][i]] = operationsDic[opDic[1]][1](df[operationsDic[opDic[1]][3][i]])
+                    end
+                end
+                DataFrame(res)
+                # DataFrame(permno=minimum(df.permno), persent = custom_sum(df.sent_rel100_nov24H, missing), pernbstories = custom_sum(df.nbStories_rel100_nov24H),
+                #           cumret = cumret(df.dailyretadj), EAD = custom_max(df.EAD), wt = df.dailywt[end], perid = mean(df.perid))
+            end
+            delete!(aggper, :perid_1)
+            for top in newstopics
+                aggper[Symbol("aggSent_$(top)")] = replace_nan(convert(Array{Union{Float64, Missing}}, aggper[Symbol("sum_perSent_$(top)")] ./ aggper[Symbol("sum_perNbStories_$(top)")]), missing)
+            end
+            ptfaggper = vcat(ptfaggper, aggper)
+
+        end
+    end #if not daily
     return ptfaggper
 end
+
+
+function perchangerows(peridvec)
+    oldper = Int(0)
+    ids = Int[]
+    row = 0
+    for i in peridvec
+        row+=1
+        if i>oldper
+            push!(ids, row)
+            oldper = i
+        end
+    end
+    return ids
+end
+
 
 
 
@@ -974,4 +1056,104 @@ function add_aroundEAD!(ptfDF, around_EAD)
         subdf[Symbol("aroundEAD$(around_EAD)")] = furthestLag
     end
     return ptfDF
+end
+
+
+function custom_replace_nan(x, replacevalue=missing)
+    if isnan(x)
+        return replacevalue
+    else
+        return x
+    end
+end
+
+
+
+
+function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
+    tdper = maptd_per(freq, tdperiods[1], tdperiods[2])
+    ranges = Dict()
+    for eventwindow in eventWindows
+        ranges[eventwindow[1]] = Dict()
+        for ewSpec in eventwindow[2]
+            ranges[eventwindow[1]][ewSpec] = Dict()
+            for i in aggDF[:perid]
+                ranges[eventwindow[1]][ewSpec][i] = tdper[i]+eventwindow[1][1]:tdper[i]+eventwindow[1][2]
+            end
+        end
+    end
+    for window in ranges
+        ws = window[1][2]-window[1][1]
+        for vars in window[2]
+            aggDF[Symbol("$(window[1])_$(vars[1])")] = Array{Union{Missing, Float64},1}(missing, length(aggDF[:perid]))
+            print(vars[1])
+            if typeof(vars[1])==Symbol
+                quintileDFs[ptf][Symbol("$(window[1])_$(vars[1])")] = running(cumret, quintileDFs[ptf][vars[1]], ws)
+            elseif length(vars[1])==2
+            end
+        end
+    end
+    sort!(aggDF, [:permno, :perid])
+    sort!(quintileDFs[ptf], [:permno, :td])
+    togetperid = by(aggDF, :permno) do df
+        res = Dict()
+        res[:perid] = df[:perid]
+        DataFrame(res)
+    end
+    aggpermnoperid = agg_permno_perid_barrier(togetperid[:permno], togetperid[:perid])
+    aggper = by(quintileDFs[ptf], :permno) do df
+        alltd = convert(Array{Union{Int64, Missing}}, collect(tdperiods[1]:tdperiods[2]))
+        #add missing to alltd
+        alltd = findnotcommondates(alltd, df[:td])
+        res = Dict()
+        for window in ranges
+            ws = window[1][2]-window[1][1]
+            for vars in window[2]
+                if typeof(vars[1])==Symbol
+                    df[Symbol("$(window[1])_$(vars[1])")] = running(cumret, df[vars[1]], ws)
+                    eventrows = assign_eventdate_barrier(aggpermnoperid[df[:permno][1]], vars[2], length(df[:permno]))
+                    res[Symbol("$(window[1])_$(vars[1])")] = df[Symbol(Symbol("$(window[1])_$(vars[1])"))][eventrows]
+                elseif length(vars[1])==2
+                end
+            end
+        end
+        DataFrame(res)
+    end
+end
+
+
+function assign_eventdate_barrier(peridvec, ranges, tdlimit)
+    res = Array{Union{Missing, Int64},1}(missing, length(peridvec))
+    for i in 1:length(res)
+        desiredid = ranges[peridvec[i]]
+        res[i] = minimum([maximum(desiredid), tdlimit])
+        # print("\n $([maximum(desiredid), tdlimit]) \n")
+    end
+    return res
+end
+
+
+function agg_permno_perid_barrier(permnovec, peridvec)
+    res = Dict()
+    for permno in Set(permnovec)
+        res[permno] = Int[]
+    end
+    for i in 1:length(peridvec)
+        push!(res[permnovec[i]], peridvec[i])
+    end
+    return res
+end
+
+
+
+function findnotcommondates(alltd, chosentd)
+    j=1
+    for i in 1:length(alltd)
+        if j<=length(chosentd) && alltd[i]==chosentd[j]
+            j+=1
+        else
+            alltd[i]=missing
+        end
+    end
+    return alltd
 end

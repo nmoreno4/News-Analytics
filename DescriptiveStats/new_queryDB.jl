@@ -6,7 +6,7 @@ chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_
               "EAD", "nbStories_rel100_nov24H_RES", "sent_rel100_nov24H_RES"]
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
-tdperiods = (1,3776) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
+tdperiods = (1,250) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
 
 using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates, DataFramesMeta, JLD2, RollingFunctions
 
@@ -57,8 +57,9 @@ newstopics = ["", "RES"] #["", "RES"]
 # monthlys = Dict()
 # quarterlys = Dict()
 # dailys = Dict()
-include("$(laptop)/DescriptiveStats/helpfcts.jl")
-# for freq in [Dates.quarterofyear,Dates.month,Dates.week, Dates.day]#[Dates.month, Dates.week, Dates.day]##Dates.quarterofyear,
+
+# include("$(laptop)/DescriptiveStats/helpfcts.jl")
+# for freq in [Dates.month]#[Dates.month, Dates.week, Dates.day]##Dates.quarterofyear,
 #     print(freq)
 #     aggDicFreq = Dict()
 #     @time for ptf in quintileids
@@ -128,63 +129,58 @@ include("$(laptop)/DescriptiveStats/helpfcts.jl")
 # end
 
 
+#Why not do a group by :perid and :permno simultaneously?
+
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
-for freq in [Dates.month, Dates.week]##Dates.quarterofyear,
-    aggDicFreq = Dict()
+aggDicFreq = Dict()
+for freq in [Dates.month]##Dates.quarterofyear,
     @time for ptf in quintileids
-        print(ptf)
-        print(Dates.now())
-        aggDF = aggperiod(quintileDFs[ptf], operationsDic, newstopics, freq, tdperiods[1], tdperiods[2])
+        print("\n $ptf - ")
+        print(Dates.format(now(), "HH:MM"))
+        @time aggDF = aggperiod(quintileDFs[ptf], operationsDic, newstopics, freq, tdperiods[1], tdperiods[2])
 
-        tdper = maptd_per(freq, tdperiods[1], tdperiods[2])
-
-        ranges = Dict()
-        if freq == Dates.day
-            eventwindows = ([-5,-1],[1,5])
-        elseif freq==Dates.month
-            eventwindows = ([-40,-20],[1,20])
-        elseif freq==Dates.quarterofyear
-            eventwindows = ([-120,-60],[1,60])
-        elseif freq==Dates.week
-            eventwindows = ([-10,-5],[1,5])
-        end
-        for eventwindow in eventwindows
-            for i in aggDF[:perid]
-                ranges[i] = tdper[i]+eventwindow[1]:tdper[i]+eventwindow[2]
-            end
-            aggDF[Symbol(eventwindow)] = Array{Union{Missing, Float64},1}(missing, length(aggDF[:perid]))
-            sort!(aggDF, [:permno, :perid])
-            for crtpermno in Set(quintileDFs[ptf][:permno])
-                res = Dict()
-                b = @where(quintileDFs[ptf], :permno .== crtpermno)
-                for crange in ranges
-                    res[crange[1]] = cumret(@where(b, map(x->x in crange[2], :td))[:dailyretadj])
-                end
-                for eventagg in res
-                    # @where(aggDF, (:perid.==eventagg[1]) .& (:permno.==crtpermno))[Symbol(eventwindow)] = eventagg[2]
-                    aggDF[(aggDF[:perid].==eventagg[1]) .& (aggDF[:permno].==crtpermno), Symbol(eventwindow)] = eventagg[2]
-                end
-            end
-        end
-        print(Dates.now())
-        aggDicFreq[ptf] = aggDF
-        # if freq==Dates.week
-        #     weeklys[ptf] = aggDF
+        # tdper = maptd_per(freq, tdperiods[1], tdperiods[2])
+        # ranges = Dict()
+        # if freq == Dates.day
+        #     eventwindows = ([-5,-1],[1,5])
         # elseif freq==Dates.month
-        #     monthlys[ptf] = aggDF
+        #     eventwindows = ([-40,-20],[1,20])
         # elseif freq==Dates.quarterofyear
-        #     quarterlys[ptf] = aggDF
-        # elseif freq==Dates.day
-        #     dailys[ptf] = aggDF
+        #     eventwindows = ([-120,-60],[1,60])
+        # elseif freq==Dates.week
+        #     eventwindows = ([-10,-5],[1,5])
         # end
+        # for eventwindow in eventwindows
+        #     for i in aggDF[:perid]
+        #         ranges[i] = tdper[i]+eventwindow[1]:tdper[i]+eventwindow[2]
+        #     end
+        #     aggDF[Symbol(eventwindow)] = Array{Union{Missing, Float64},1}(missing, length(aggDF[:perid]))
+        #     sort!(aggDF, [:permno, :perid])
+        #     for crtpermno in Set(quintileDFs[ptf][:permno])
+        #         res = Dict()
+        #         b = @where(quintileDFs[ptf], :permno .== crtpermno)
+        #         for crange in ranges
+        #             res[crange[1]] = cumret(@where(b, map(x->x in crange[2], :td))[:dailyretadj])
+        #         end
+        #         for eventagg in res
+        #             # @where(aggDF, (:perid.==eventagg[1]) .& (:permno.==crtpermno))[Symbol(eventwindow)] = eventagg[2]
+        #             aggDF[(aggDF[:perid].==eventagg[1]) .& (aggDF[:permno].==crtpermno), Symbol(eventwindow)] = eventagg[2]
+        #         end
+        #     end
+        # end
+
+        print(Dates.format(now(), "HH:MM"))
+        aggDicFreq[ptf] = aggDF
+        break
     end
     JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/quintiles_$(freq)_$(tdperiods).jld" aggDicFreq
 end
 
 
+even
 
-
-
+eventWindows = Dict([-40,-20]=>(:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES)),
+                    [1,20]=>(:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES)))
 
 JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_daily_300.jld" dailys
 JLD2.@save "/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df_weekly_300.jld" weeklys
