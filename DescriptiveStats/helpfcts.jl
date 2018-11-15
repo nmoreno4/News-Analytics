@@ -1073,12 +1073,14 @@ end
 function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
     tdper = maptd_per(freq, tdperiods[1], tdperiods[2])
     ranges = Dict()
+    revertranges = Dict()
     for eventwindow in eventWindows
         ranges[eventwindow[1]] = Dict()
         for ewSpec in eventwindow[2]
             ranges[eventwindow[1]][ewSpec] = Dict()
             for i in aggDF[:perid]
                 ranges[eventwindow[1]][ewSpec][i] = tdper[i]+eventwindow[1][1]:tdper[i]+eventwindow[1][2]
+                revertranges[tdper[i]+eventwindow[1][2]] = i
             end
         end
     end
@@ -1086,7 +1088,6 @@ function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
         ws = window[1][2]-window[1][1]
         for vars in window[2]
             aggDF[Symbol("$(window[1])_$(vars[1])")] = Array{Union{Missing, Float64},1}(missing, length(aggDF[:perid]))
-            print(vars[1])
             if typeof(vars[1])==Symbol
                 quintileDFs[ptf][Symbol("$(window[1])_$(vars[1])")] = running(cumret, quintileDFs[ptf][vars[1]], ws)
             elseif length(vars[1])==2
@@ -1106,27 +1107,55 @@ function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
         #add missing to alltd
         alltd = findnotcommondates(alltd, df[:td])
         res = Dict()
+        vecWmissing = Dict()
+        for window in ranges
+            for vars in window[2]
+                if typeof(vars[1])==Symbol
+                    vecWmissing[vars[1]] = returnswithmissing(df[vars[1]], alltd, df[:td])
+                elseif length(vars[1])==2
+                    for sousvar in vars[1]
+                        vecWmissing[sousvar] = returnswithmissing(df[sousvar], alltd, df[:td])
+                    end
+                end
+            end
+            break #only need to consider vars once
+        end
         for window in ranges
             ws = window[1][2]-window[1][1]
             for vars in window[2]
                 if typeof(vars[1])==Symbol
-                    df[Symbol("$(window[1])_$(vars[1])")] = running(cumret, df[vars[1]], ws)
-                    eventrows = assign_eventdate_barrier(aggpermnoperid[df[:permno][1]], vars[2], length(df[:permno]))
-                    res[Symbol("$(window[1])_$(vars[1])")] = df[Symbol(Symbol("$(window[1])_$(vars[1])"))][eventrows]
+                    runningvar = running(cumret, vecWmissing[vars[1]], ws)
                 elseif length(vars[1])==2
+                    runningvar = convert(Array{Union{Float64, Missing}}, running(custom_sum_missing, vecWmissing[vars[1][1]], ws) ./ running(custom_sum, vecWmissing[vars[1][2]], ws)) #Careful: order sentiment -> nbStories matters
+                end
+                eventrows = assign_eventdate_barrier(aggpermnoperid[df[:permno][1]], vars[2], length(runningvar), ws)
+                try
+                    push!(runningvar, missing)
+                    res[Symbol("$(window[1])_$(vars[1])")] = runningvar[eventrows]
+                catch err
+                    error(err)
+                    error("$eventrows - $runningvar - $(window) - $(vars[1])")
                 end
             end
         end
         DataFrame(res)
     end
+    aggDF = hcat(aggDF, aggper)
+    return aggDF
 end
 
 
-function assign_eventdate_barrier(peridvec, ranges, tdlimit)
+function assign_eventdate_barrier(peridvec, ranges, tdlimit, ws)
     res = Array{Union{Missing, Int64},1}(missing, length(peridvec))
     for i in 1:length(res)
         desiredid = ranges[peridvec[i]]
-        res[i] = minimum([maximum(desiredid), tdlimit])
+        if maximum(desiredid)>=tdlimit && maximum(desiredid)-tdlimit>=ws
+            res[i] = tdlimit+1
+        elseif maximum(desiredid)>=tdlimit && maximum(desiredid)-tdlimit<ws
+            res[i] = tdlimit
+        else
+            res[i] = maximum(desiredid)
+        end
         # print("\n $([maximum(desiredid), tdlimit]) \n")
     end
     return res
@@ -1156,4 +1185,28 @@ function findnotcommondates(alltd, chosentd)
         end
     end
     return alltd
+end
+
+
+function findminperid(revertranges, mintd, eventspan)
+    for i in 0:eventspan
+        print(i)
+        if mintd in collect(keys(revertranges)).+i
+            return revertranges[mintd]
+        end
+    end
+end
+
+
+
+function returnswithmissing(dataseries, alltd, seriestd)
+    res = Array{Union{Missing, Float64},1}(missing, length(alltd))
+    j=1
+    for i in 1:length(alltd)
+        if !(ismissing(alltd[i])) && alltd[i]==seriestd[j]
+            res[i] = dataseries[j]
+            j+=1
+        end
+    end
+    return res
 end
