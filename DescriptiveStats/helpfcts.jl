@@ -1,4 +1,4 @@
-using RCall, Statistics, StatsBase, TimeZones, Dates, RollingFunctions
+using RCall, Statistics, StatsBase, TimeZones, Dates, RollingFunctions, DataFramesMeta
 include("/home/nicolas/github/News-Analytics/Denada_DB/WRDS/WRDSdownload.jl")
 
 function sent_ret_series(sentMat, wMat, retMat, nbstoriesMat, ignoremissing=false)
@@ -998,12 +998,12 @@ end
 
 function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
     wtSUM = by(aggDF, perSymb) do df
-        DataFrame(wtSUM = custom_sum(df.wt))
+        DataFrame(wtSUM = custom_sum(df[:wt]))
     end
     wtSUM=Dict(zip(wtSUM[perSymb], wtSUM[:wtSUM]))
     # print(@with(aggDF, cols(sentSymb) + cols(wt)))
     for ncol in newcols
-        aggDF[ncol] = Array{Union{Float64,Missing}}(missing, length(aggDF[:perid]))
+        aggDF[ncol] = Array{Union{Float64,Missing}}(missing, length(aggDF[perSymb]))
     end
     df2 = @byrow! aggDF begin
         @newcol wtSUM::Array{Union{Float64,Missing}}
@@ -1015,12 +1015,12 @@ function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
     resDF = by(df2, perSymb) do df
         res = Dict()
         for (symb, coln) in zip(symbs, newcols)
-            res[Symbol("VW_$(symb)")] = custom_sum(df[coln])
-            res[Symbol("EW_$(symb)")] = custom_mean(df[symb])
+            res[Symbol("VW_$(symb)")] = custom_sum_missing(df[coln])
+            res[Symbol("EW_$(symb)")] = custom_mean_missing(df[symb])
         end
         DataFrame(res)
     end
-    sort!(resDF, :perid)
+    sort!(resDF, perSymb)
     return resDF
     # return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
 end
@@ -1102,7 +1102,7 @@ function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
         DataFrame(res)
     end
     aggpermnoperid = agg_permno_perid_barrier(togetperid[:permno], togetperid[:perid])
-    aggper = by(quintileDFs[ptf], :permno) do df
+    @time aggper = by(quintileDFs[ptf], :permno) do df
         alltd = convert(Array{Union{Int64, Missing}}, collect(tdperiods[1]:tdperiods[2]))
         #add missing to alltd
         alltd = findnotcommondates(alltd, df[:td])
@@ -1133,8 +1133,8 @@ function addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
                     push!(runningvar, missing)
                     res[Symbol("$(window[1])_$(vars[1])")] = runningvar[eventrows]
                 catch err
-                    error(err)
-                    error("$eventrows - $runningvar - $(window) - $(vars[1])")
+                    # error(err)
+                    error("er $eventrows - rv $(countmissing(runningvar)) - wd $(window[1]) - vs $(vars[2][1]) + $(vars[2][123]) - pid $(aggpermnoperid[df[:permno][1]]) - lrv $(length(runningvar)) - ws $ws")
                 end
             end
         end
@@ -1153,6 +1153,8 @@ function assign_eventdate_barrier(peridvec, ranges, tdlimit, ws)
             res[i] = tdlimit+1
         elseif maximum(desiredid)>=tdlimit && maximum(desiredid)-tdlimit<ws
             res[i] = tdlimit
+        elseif maximum(desiredid)<=0
+            res[i] = tdlimit+1
         else
             res[i] = maximum(desiredid)
         end

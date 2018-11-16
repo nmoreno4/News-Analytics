@@ -28,12 +28,12 @@ end
 # Transform Dic to DF
 quintileids = [x*10+y for x in 1:5 for y in 1:5]
 quintileDFs = Dict()
-for id in quintileids
+@time for id in quintileids
     quintileDFs[id] = queryDic_to_df(quintileDic[id], [chosenVars; "permno"; "td"])
 end
 
 around_EAD = -1:1:1
-for ptf in quintileids
+@time for ptf in quintileids
     quintileDFs[ptf] = add_aroundEAD!(quintileDFs[ptf], around_EAD)
 end
 
@@ -56,59 +56,34 @@ dfvars = (:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_
 
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
 aggDicFreq = Dict()
-for freq in [Dates.quarterofyear, Dates.month, Dates.week, Dates.day]##Dates.quarterofyear,
+for freq in [Dates.week]##Dates.quarterofyear,Dates.quarterofyear, Dates.month, Dates.week,
+    print(freq)
     if freq == Dates.day
         eventWindows = Dict([-1,0]=>dfvars,
                             [-2,-1]=>dfvars,
                             [-3,-1]=>dfvars,
                             [-4,-1]=>dfvars,
                             [-5,-1]=>dfvars,
-                            [-10,-1]=>dfvars,
-                            [-20,-1]=>dfvars,
-                            [0,1]=>dfvars,
                             [1,2]=>dfvars,
                             [1,3]=>dfvars,
                             [1,4]=>dfvars,
-                            [1,5]=>dfvars,
-                            [1,10]=>dfvars,
-                            [1,20]=>dfvars)
+                            [1,5]=>dfvars)
     elseif freq==Dates.month
-        eventWindows = Dict([-20,-10]=>dfvars,
-                            [-30,-20]=>dfvars,
-                            [-40,-20]=>dfvars,
+        eventWindows = Dict([-40,-20]=>dfvars,
                             [-60,-20]=>dfvars,
-                            [-80,-20]=>dfvars,
-                            [-100,-20]=>dfvars,
-                            [-120,-20]=>dfvars,
                             [1,20]=>dfvars,
                             [20,40]=>dfvars,
-                            [20,60]=>dfvars,
-                            [20,80]=>dfvars,
-                            [20,100]=>dfvars,
-                            [20,120]=>dfvars)
+                            [20,60]=>dfvars)
     elseif freq==Dates.quarterofyear
-        eventWindows = Dict([-60,-30]=>dfvars,
-                            [-120,-60]=>dfvars,
-                            [-180,-60]=>dfvars,
-                            [-240,-60]=>dfvars,
-                            [0,30]=>dfvars,
+        eventWindows = Dict([-120,-60]=>dfvars,
                             [0,60]=>dfvars,
-                            [0,120]=>dfvars,
-                            [0,180]=>dfvars,
-                            [0,240]=>dfvars)
+                            [0,120]=>dfvars)
     elseif freq==Dates.week
         eventWindows = Dict([-10,-5]=>dfvars,
                             [-15,-5]=>dfvars,
-                            [-20,-5]=>dfvars,
-                            [-40,-5]=>dfvars,
-                            [-60,-5]=>dfvars,
-                            [0,1]=>dfvars,
                             [0,3]=>dfvars,
-                            [0,5]=>dfvars
-                            [0,10]=>dfvars,
-                            [0,20]=>dfvars,
-                            [0,40]=>dfvars,
-                            [0,60]=>dfvars,)
+                            [0,5]=>dfvars,
+                            [0,10]=>dfvars)
     end
     @time for ptf in quintileids
         print("\n $ptf - ")
@@ -120,7 +95,7 @@ for freq in [Dates.quarterofyear, Dates.month, Dates.week, Dates.day]##Dates.qua
         print(Dates.format(now(), "HH:MM"))
         aggDicFreq[ptf] = aggDF
     end
-    JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/quintiles_$(freq)_$(tdperiods).jld" aggDicFreq
+    @time JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/quintiles_$(freq)_$(tdperiods).jld2" aggDicFreq
 end
 
 
