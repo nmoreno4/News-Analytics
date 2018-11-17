@@ -1,4 +1,4 @@
-using DataFrames, RCall
+using DataFrames, RCall, DataFramesMeta
 
 function rename_event(symb,topics=["RES"])
     substrings = split(String(symb) ,r"[\[\]()]")
@@ -100,23 +100,158 @@ function ptfEWmean(dicDF)
     for ptf in 1:5
         ts = Float64[]
         for row in 1:size(dicDF[ptf], 1)
-            push!(ts, custom_mean_missing(dicDF[ptf][row,:]))
+            push!(ts, custom_mean(dicDF[ptf][row,:]))
         end
         if ptf==1
             X = ts
         else
-            X = hcat(X, ts)
+            try
+                X = hcat(X, ts)
+            catch
+                error("$(size(X)) - $(size(ts))")
+            end
         end
     end
-    return X
+    X = replace(X, missing=>0)
+    return X = replace(X, NaN=>0)
 end
 
 
-function timmerman(X)
+function timmerman(X, freq)
     #Use 10/6/3/2 as the block length if data is measured in daily/monthly/quarterly/annual returns.
     @rput X
+    @rput freq
     R"library(monotonicity)"
-    R"Y = monoRelation(X, bootstrap = 1000, increasing=T, difference = F, 3)"
-    @rget Y
-    return Y
+    R"Y = monoRelation(X, bootstrap = 1000, increasing=T, difference = F, freq)"
+    R"Z = monoRelation(X, bootstrap = 1000, increasing=F, difference = F, freq)"
+    @rget Y; @rget Z
+    return (Y, Z)
+end
+
+
+
+function daysWNOead(tdperiods, means_td_sent)
+    res = Union{Float64, Missing}[]
+    var = names(means_td_sent)[end]
+    j=1
+    for i in tdperiods[1]:tdperiods[2]
+        if !(i in means_td_sent[:perid])
+            push!(res, 0)
+        else
+            push!(res, means_td_sent[var][j])
+            j+=1
+        end
+    end
+    return DataFrame(Dict(:perid=>collect(tdperiods[1]:tdperiods[2]), var=>res))
+end
+
+
+function cdf_variable(ptfDF, vars, ptf)
+    res = ones(Float64, 100, length(vars))
+    for i in 1:length(vars)
+        res[:,i] = percentile(collect(skipmissing(ptfDF[vars[i]])), 1:100)
+    end
+    res = DataFrame(res)
+    names!(res, vars)
+    CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/cdf_$(ptf)_$(vars).csv", DataFrame(res))
+    return res
+end
+
+
+
+function buckets_assign(ptfDF, cvar, cperc)
+    ptfDF[Symbol("$(cvar)_bucket")] = 0
+    bkpoints = percentile(collect(skipmissing(ptfDF[cvar])), cperc)
+    pushfirst!(bkpoints, -999999999999)
+    for bp in 2:length(bkpoints)
+        for row in 1:length(ptfDF[cvar])
+            if !(ismissing(ptfDF[cvar][row])) && bkpoints[bp-1] < ptfDF[cvar][row] <= bkpoints[bp]
+                ptfDF[Symbol("$(cvar)_bucket")][row] = bp-1
+            end
+        end
+    end
+    return ptfDF
+end
+
+
+
+
+function HMLspreads(HMLDic, chosenvars, ws="VW")
+    HMLids = [(x,y) for x in [(1,3), (8,10), (4,7)] for y in [(1,5), (6,10)]]
+
+    w_vars = [Symbol("w_$(x)") for x in chosenvars]
+    print(chosenvars)
+    SL = EW_VW_series(HMLDic[HMLids[1]], w_vars, chosenvars)
+    BL = EW_VW_series(HMLDic[HMLids[2]], w_vars, chosenvars)
+    SH = EW_VW_series(HMLDic[HMLids[3]], w_vars, chosenvars)
+    BH = EW_VW_series(HMLDic[HMLids[4]], w_vars, chosenvars)
+
+
+    XW_vars = [Symbol("$(ws)_$(x)") for x in chosenvars]
+    res = Dict()
+    for i in 1:length(XW_vars)
+        H_VW = (replace(SH[XW_vars[i]], missing=>0) .+ replace(BH[XW_vars[i]], missing=>0)) ./ 2
+        L_VW = (replace(SL[XW_vars[i]], missing=>0) .+ replace(BL[XW_vars[i]], missing=>0)) ./ 2
+        res[Symbol("HML_$(XW_vars[i])")] = H_VW .- L_VW
+    end
+
+    return res
+end
+
+
+function loadFFfactors()
+    FFfactors = CSV.read("/run/media/nicolas/Research/FF/dailyFactors.csv")[1:3776,:]
+    FFfactors[:Date] = 1:3776
+    for i in names(FFfactors)[2:end]
+        FFfactors[i] = FFfactors[i] ./ 100
+    end
+    return FFfactors
+end
+
+
+function concat_groupInvariant_vars(c, regDF)
+    #c is my "raw" DataFrame, regDF is my DataFrame with group-invariant data (e.g. HML spreads, RF, Baker sent, etc...)
+    for i in names(regDF)
+        c[i] = 0
+    end
+    for i in names(c)
+        c[i] = convert(Array{Union{Float64,Missing}}, c[i])
+    end
+    for row in 1:size(c,1)
+        c[row,5:end] = regDF[Int(c[row,:perid]),:]
+    end
+    return c
+end
+
+
+
+function excessRet(c, vars, RFvec)
+    for i in vars
+        for row in 1:size(c,1)
+            c[row,i] = c[row,i] - RFvec[Int(c[row,:perid])]
+        end
+    end
+    return c
+end
+
+
+
+function createPanelDF(ptfDF, HMLDic; HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_])
+    HMLnico = HMLspreads(HMLDic, HMLvars)
+    FFfactors = loadFFfactors()
+    HMLnico[:HML_VW_cumret] = HMLnico[:HML_VW_cumret] .- FFfactors[:RF]
+    groupInvariants = hcat(FFfactors, DataFrame(HMLnico))
+
+    stackDF = ptfDF[[:aggSent_, :cumret, :perid, :permno, :wt]]
+    ptfSpecific = EW_VW_series(c, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
+    print(names(ptfSpecific))
+    delete!(ptfSpecific, [:perid])
+    delete!(stackDF, [:wt])
+    names!(ptfSpecific, [Symbol("ptf_$(x)") for x in names(ptfSpecific)])
+    groupInvariants = hcat(FFfactors, DataFrame(HMLnico), ptfSpecific)
+    delete!(groupInvariants, :Date)
+    stackDF = excessRet(stackDF, [:cumret], groupInvariants[:RF])
+    paneldf = concat_groupInvariant_vars(stackDF, groupInvariants)
+
+    return paneldf
 end

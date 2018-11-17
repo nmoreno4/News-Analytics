@@ -640,11 +640,11 @@ function custom_std(X)
     X = convert(Array{Union{Float64,Missing}}, X)
     return std(collect(skipmissing(X)))
 end
-function custom_mean(X, retval=0)
+function custom_mean(X, retval=1)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    if length(collect(skipmissing(X)))==0 && retval!==0
+    if length(collect(skipmissing(X)))==0 && retval!==1
         return retval
     else
         return mean(collect(skipmissing(X)))
@@ -654,7 +654,7 @@ function custom_mean_missing(X, retval=missing)
     X = replace(X, missing=>NaN, nothing=>NaN)
     X = replace(X, NaN=>missing)
     X = convert(Array{Union{Float64,Missing}}, X)
-    if length(collect(skipmissing(X)))==0 && retval!==0
+    if length(collect(skipmissing(X)))==0 && retval!==1
         return retval
     else
         return mean(collect(skipmissing(X)))
@@ -1209,6 +1209,16 @@ function returnswithmissing(dataseries, alltd, seriestd)
             res[i] = dataseries[j]
             j+=1
         end
+    end
+    return res
+end
+
+
+
+function rollingdiff(X, d)
+    res = Float64[]
+    for i in 1:(length(X)-d)
+        push!(res, X[i+d]-X[i])
     end
     return res
 end
