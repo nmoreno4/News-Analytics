@@ -1020,6 +1020,7 @@ function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
         end
         DataFrame(res)
     end
+    delete!(aggDF, newcols)
     sort!(resDF, perSymb)
     return resDF
     # return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]

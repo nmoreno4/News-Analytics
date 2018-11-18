@@ -1,4 +1,4 @@
-using DataFrames, RCall, DataFramesMeta
+using DataFrames, RCall, DataFramesMeta, RollingFunctions
 
 function rename_event(symb,topics=["RES"])
     substrings = split(String(symb) ,r"[\[\]()]")
@@ -130,19 +130,23 @@ end
 
 
 
-function daysWNOead(tdperiods, means_td_sent)
-    res = Union{Float64, Missing}[]
-    var = names(means_td_sent)[end]
-    j=1
-    for i in tdperiods[1]:tdperiods[2]
-        if !(i in means_td_sent[:perid])
-            push!(res, 0)
-        else
-            push!(res, means_td_sent[var][j])
-            j+=1
+function daysWNOead(tdperiods, means_td_sent, vars)
+    allperidDF = Dict()
+    for var in vars
+        res = Union{Float64, Missing}[]
+        j=1
+        for i in tdperiods[1]:tdperiods[2]
+            if !(i in means_td_sent[:perid])
+                push!(res, 0)
+            else
+                push!(res, means_td_sent[var][j])
+                j+=1
+            end
         end
+        allperidDF[var] = res
     end
-    return DataFrame(Dict(:perid=>collect(tdperiods[1]:tdperiods[2]), var=>res))
+    allperidDF[:perid] = collect(tdperiods[1]:tdperiods[2])
+    return DataFrame(allperidDF)
 end
 
 
@@ -236,22 +240,93 @@ end
 
 
 
-function createPanelDF(ptfDF, HMLDic; HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_])
+function createPanelDF(ptfDF, HMLDic; runninglags = [250,60,20,5], HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_], tdperiods = (1,3776))
     HMLnico = HMLspreads(HMLDic, HMLvars)
     FFfactors = loadFFfactors()
     HMLnico[:HML_VW_cumret] = HMLnico[:HML_VW_cumret] .- FFfactors[:RF]
-    groupInvariants = hcat(FFfactors, DataFrame(HMLnico))
+    HMLnico = DataFrame(HMLnico)
+    for i in names(HMLnico)
+        for lag in runninglags
+            chosenfct = custom_mean
+            if String(i)[end-2:end]=="ret"
+                chosenfct = cumret
+            end
+            HMLnico[Symbol("$(i)_l$(lag)")] = running(chosenfct, HMLnico[i], lag)
+        end
+    end
+    groupInvariants = hcat(FFfactors, HMLnico)
 
     stackDF = ptfDF[[:aggSent_, :cumret, :perid, :permno, :wt]]
-    ptfSpecific = EW_VW_series(c, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
+    ptfSpecific = EW_VW_series(ptfDF, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
     print(names(ptfSpecific))
+    print("A")
+    ptfSpecific = daysWNOead(tdperiods, ptfSpecific, names(ptfSpecific))
+    print(names(ptfSpecific))
+    print("B")
     delete!(ptfSpecific, [:perid])
     delete!(stackDF, [:wt])
     names!(ptfSpecific, [Symbol("ptf_$(x)") for x in names(ptfSpecific)])
+    print(names(ptfSpecific))
     groupInvariants = hcat(FFfactors, DataFrame(HMLnico), ptfSpecific)
     delete!(groupInvariants, :Date)
     stackDF = excessRet(stackDF, [:cumret], groupInvariants[:RF])
     paneldf = concat_groupInvariant_vars(stackDF, groupInvariants)
 
     return paneldf
+end
+
+
+
+
+function panelReg(a)
+    regfactors = [String(x) for x in names(a)]
+    @rput regfactors
+    R"regspec <- as.formula(paste(paste(regfactors[3], '~', sep=''), paste(regfactors[4:length(regfactors)], collapse='+')))"
+    @rput a
+    R"library(plm)"
+    R"E <- pdata.frame(a, index=c('permno', 'perid'))"
+    R"mod <- plm(regspec, data = E, model = 'within')"
+    R"res = summary(mod)"
+    R"coeffcols = colnames(summary(mod)$coefficients)"
+    R"coeffrows = rownames(summary(mod)$coefficients)"
+    @rget res; @rget coeffcols; @rget coeffrows
+    res[:coefficients] = DataFrame(res[:coefficients])
+    names!(res[:coefficients], Symbol.(coeffcols))
+    oldcols = names(res[:coefficients])
+    res[:coefficients][:depvars] = coeffrows
+    res[:coefficients] = res[:coefficients][[:depvars; oldcols]]
+    return res
+end
+
+
+
+
+function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
+    wtSUM = by(aggDF, perSymb) do df
+        DataFrame(wtSUM = custom_sum(df[:wt]))
+    end
+    wtSUM=Dict(zip(wtSUM[perSymb], wtSUM[:wtSUM]))
+    # print(@with(aggDF, cols(sentSymb) + cols(wt)))
+    for ncol in newcols
+        aggDF[ncol] = Array{Union{Float64,Missing}}(missing, length(aggDF[perSymb]))
+    end
+    df2 = @byrow! aggDF begin
+        @newcol wtSUM::Array{Union{Float64,Missing}}
+        :wtSUM = wtSUM[:perid]
+    end
+    for (symb, coln) in zip(symbs, newcols)
+        df2[coln] = @with(df2, cols(symb) .* (cols(wt) ./ cols(:wtSUM)) )
+    end
+    resDF = by(df2, perSymb) do df
+        res = Dict()
+        for (symb, coln) in zip(symbs, newcols)
+            res[Symbol("VW_$(symb)")] = custom_sum_missing(df[coln])
+            res[Symbol("EW_$(symb)")] = custom_mean_missing(df[symb])
+        end
+        DataFrame(res)
+    end
+    delete!(aggDF, newcols)
+    sort!(resDF, perSymb)
+    return resDF
+    # return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
 end

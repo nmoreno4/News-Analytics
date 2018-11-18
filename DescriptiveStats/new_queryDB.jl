@@ -80,7 +80,7 @@ operationsDic["cumrets"] = [cumret,
 operationsDic["maxs"] = [custom_max,
                             [:EAD, Symbol("aroundEAD$(around_EAD)"), Symbol("aroundEAD$(around_EAD_prev)"), Symbol("aroundEAD$(around_EAD_post)")],
                             [:EAD, Symbol("aroundEAD$(around_EAD)"), Symbol("aroundEAD$(around_EAD_prev)"), Symbol("aroundEAD$(around_EAD_post)")]]
-newstopics = ["", "RES"] #["", "RES"]
+newstopics = ["", "RES", "CMPNY", "MRG", "RESF"] #["", "RES"]
 
 dfvars = (:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES),
             (:sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY), (:sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG), (:sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF))

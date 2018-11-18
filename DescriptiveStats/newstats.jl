@@ -7,7 +7,8 @@ tdperiods = (1,3776)
 # "/run/media/nicolas/Research/SummaryStats/agg/quintiles_$(freq)_$(tdperiods).jld2"
 @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/simple_HML_Dates.day_(1, 3776).jld2"
 HMLDic = deepcopy(aggDicFreq)
-@time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintiles/quintiles_Dates.day_(1, 3776).jld2"
+# @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintiles/quintiles_Dates.day_(1, 3776).jld2"
+@time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintilenew_Dates.day_(1, 3776).jld2"
 
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 quintileids = [x*10+y for x in 1:5 for y in 1:5]
@@ -71,46 +72,31 @@ foo = buckets_assign(ptfDF, :aggSent_, 10:10:100)
 
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 
-ptfDF = aggDicFreq[55]
-paneldf = @time createPanelDF(ptfDF, HMLDic, ptfvars = [:cumret, :aggSent_])
 
 
-function panelReg(paneldf)
-    @rput paneldf
-    R"library(plm)"
-    R"E <- pdata.frame(paneldf, index=c('permno', 'perid'))";
-    R"mod <- plm(cumret~aggSent_+ ptf_VW_aggSent_ + HML_VW_aggSent_ + Mkt_RF + HML + SMB + Mom, data = E, model = 'within')"
-    R"res = summary(mod)"
-    R"coeffcols = colnames(summary(mod)$coefficients)"
-    R"coeffrows = rownames(summary(mod)$coefficients)"
-    @rget res; @rget coeffcols; @rget coeffrows
-    res[:coefficients] = DataFrame(res[:coefficients])
-    names!(res[:coefficients], Symbol.(coeffcols))
-    oldcols = names(res[:coefficients])
-    res[:coefficients][:depvars] = coeffrows
-    res[:coefficients] = res[:coefficients][[:depvars; oldcols]]
-    return res
+for ptf in [x*10+y for x in 1:5 for y in 1:5]
+    ptfDF = keepgoodcolumns(ptfDF[ptf], ["", "RES", "CMPNY", "MRG", "RESF"])
+    replace!(ptfDF[Symbol("aroundEAD-5:1:-1")], missing=>0)
+    # ptfDF = ptfDF[ptfDF[Symbol("aroundEAD-5:1:-1")].==1,:]
+    ptfvars = [:cumret, Symbol("aggSent_-5_-1"), Symbol("aggSent_-5_-1"), Symbol("aggSent_-5_-1"), Symbol("aggSent_-5_-1")]
+    paneldf = @time createPanelDF(ptfDF, HMLDic, ptfvars = [:cumret, depSent], runninglags = [250,60,20,5], tdperiods = tdperiods);
+
+    namesWNOminus = [Symbol(replace(String(x), "-"=>"m")) for x in names(paneldf)]
+    names!(paneldf, namesWNOminus)
+
+    # Regress current return against current HMLsent, stocksent and ptfsent
+    a=paneldf[[:permno, :perid, :cumret, :aggSent_, Symbol("ptf_VW_aggSent_m5_m1"), :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom]]
+    reg = panelReg(a)
+
+
+    # Regress next week's return against current HMLsent, stocksent and ptfsent
+    a=paneldf[[:permno, :perid, :cumret, :aggSent_, Symbol("ptf_VW_aggSent_m5_m1"), :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom]]
+    reg = panelReg(a)
 end
 
 
 
-
-for i in [x*10+y for x in 1:5 for y in 1:5]
-    crtRet = EW_VW_series(aggDicFreq[i], [:w_aggSent_, :w_cumret], [Symbol("aggSent_"), :cumret])
-    regDF = Dict(:RF=>FFfactors[:RF], :HMLFF=>FFfactors[:HML], :HMLnico=>HML_VW, :HMLsent=>HML_VWsent,
-                 :CMA=>FFfactors[:CMA], :RMW=>FFfactors[:RMW], :Mom=>FFfactors[:Mom], :Mkt_rf=>FFfactors[:Mkt_RF],
-                 :SMB=>FFfactors[:SMB], :ptfret_rf=>crtRet[:VW_cumret]-FFfactors[:RF], :ptfsent=>crtRet[:VW_aggSent_])
-    regDF = DataFrame(regDF)
-    print(ols)
-end
-
-
-@rput c
-R"library(plm)"
-R"E <- pdata.frame(c, index=c('permno', 'perid'))";
-R"mod <- plm(cumret~aggSent_+ ptfsent + HMLsent, data = E, model = 'within')"
-R"summary(mod)"
-
+print(1)
 
 function classifynewspolarity(ptfDF, groupvar, percentiles)
     a = by(ptfDF, groupvar) do df
