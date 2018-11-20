@@ -28,7 +28,7 @@ function rename_event(symb,topics=["RES"])
             end
         end
     end
-    return Symbol("$(res[2])$(res[3])_$(res[1])")
+    return Symbol("$(res[2])_$(res[3])_$(res[1])")
 end
 
 function keepgoodcolumns(ptfDF, topics)
@@ -67,7 +67,11 @@ function by_means(ptfDF, vars, groupvar)
     a = by(ptfDF, groupvar) do df
         res = Dict()
         for var in vars
-            res[Symbol("mean_$(var)")] = custom_mean_missing(df[var])
+            if occursin("Nb", String(var)) #I want to put zeros on days w no news
+                res[Symbol("mean_$(var)")] = mean(replace(df[var], missing=>0))
+            else
+                res[Symbol("mean_$(var)")] = custom_mean_missing(df[var])
+            end
         end
         DataFrame(res)
     end
@@ -78,7 +82,11 @@ function colmeans_to_dic(a)
     res = Dict()
     for i in names(a)
         if i != :permno
-            res[i] = custom_mean_missing(a[i])
+            if occursin("Nb", String(i)) #I want to put zeros on days w no news
+                res[i] = mean(replace(a[i], missing=>0))
+            else
+                res[i] = custom_mean_missing(a[i])
+            end
         end
     end
     return res
@@ -153,7 +161,10 @@ end
 function cdf_variable(ptfDF, vars, ptf)
     res = ones(Float64, 100, length(vars))
     for i in 1:length(vars)
-        res[:,i] = percentile(collect(skipmissing(ptfDF[vars[i]])), 1:100)
+        a = ptfDF[vars[i]]
+        replace!(a, NaN=>missing)
+        a = collect(skipmissing(a))
+        res[:,i] = percentile(a, 1:100)
     end
     res = DataFrame(res)
     names!(res, vars)
@@ -184,7 +195,6 @@ function HMLspreads(HMLDic, chosenvars, ws="VW")
     HMLids = [(x,y) for x in [(1,3), (8,10), (4,7)] for y in [(1,5), (6,10)]]
 
     w_vars = [Symbol("w_$(x)") for x in chosenvars]
-    print(chosenvars)
     SL = EW_VW_series(HMLDic[HMLids[1]], w_vars, chosenvars)
     BL = EW_VW_series(HMLDic[HMLids[2]], w_vars, chosenvars)
     SH = EW_VW_series(HMLDic[HMLids[3]], w_vars, chosenvars)
@@ -213,7 +223,7 @@ function loadFFfactors()
 end
 
 
-function concat_groupInvariant_vars(c, regDF)
+function concat_groupInvariant_vars(c, regDF, firstnew)
     #c is my "raw" DataFrame, regDF is my DataFrame with group-invariant data (e.g. HML spreads, RF, Baker sent, etc...)
     for i in names(regDF)
         c[i] = 0
@@ -222,7 +232,7 @@ function concat_groupInvariant_vars(c, regDF)
         c[i] = convert(Array{Union{Float64,Missing}}, c[i])
     end
     for row in 1:size(c,1)
-        c[row,5:end] = regDF[Int(c[row,:perid]),:]
+        c[row,firstnew:end] = regDF[Int(c[row,:perid]),:]
     end
     return c
 end
@@ -256,21 +266,17 @@ function createPanelDF(ptfDF, HMLDic; runninglags = [250,60,20,5], HMLvars = [:s
     end
     groupInvariants = hcat(FFfactors, HMLnico)
 
-    stackDF = ptfDF[[:aggSent_, :cumret, :perid, :permno, :wt]]
+    stackDF = ptfDF[[ptfvars; [:perid, :permno, :wt]]]
+    firstnew = size(stackDF, 2)
     ptfSpecific = EW_VW_series(ptfDF, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
-    print(names(ptfSpecific))
-    print("A")
     ptfSpecific = daysWNOead(tdperiods, ptfSpecific, names(ptfSpecific))
-    print(names(ptfSpecific))
-    print("B")
     delete!(ptfSpecific, [:perid])
     delete!(stackDF, [:wt])
     names!(ptfSpecific, [Symbol("ptf_$(x)") for x in names(ptfSpecific)])
-    print(names(ptfSpecific))
     groupInvariants = hcat(FFfactors, DataFrame(HMLnico), ptfSpecific)
     delete!(groupInvariants, :Date)
     stackDF = excessRet(stackDF, [:cumret], groupInvariants[:RF])
-    paneldf = concat_groupInvariant_vars(stackDF, groupInvariants)
+    paneldf = concat_groupInvariant_vars(stackDF, groupInvariants, firstnew)
 
     return paneldf
 end
@@ -285,7 +291,11 @@ function panelReg(a)
     @rput a
     R"library(plm)"
     R"E <- pdata.frame(a, index=c('permno', 'perid'))"
-    R"mod <- plm(regspec, data = E, model = 'within')"
+    try
+        R"mod <- plm(regspec, data = E, model = 'within')"
+    catch
+        R"mod <- plm(regspec, data = E, model = 'within')"
+    end
     R"res = summary(mod)"
     R"coeffcols = colnames(summary(mod)$coefficients)"
     R"coeffrows = rownames(summary(mod)$coefficients)"
@@ -329,4 +339,40 @@ function EW_VW_series(aggDF, newcols, symbs, wt=:wt, perSymb=:perid)
     sort!(resDF, perSymb)
     return resDF
     # return resDF[[:perid, :VWsent, :VWret, :VWcov, :EWsent, :EWret, :EWcov]]
+end
+
+
+
+function createdoublesort(ptfDF, cvar1 = Symbol("aggSent__-5_-1"), cvar2 = Symbol("aggSent__-60_-1"))
+    ptfDF = buckets_assign(ptfDF, cvar1, 10:10:100)
+    ptfDF = buckets_assign(ptfDF, cvar2, 10:10:100)
+    ptfDF[:doublefreqsort] = 0
+    for row in 1:size(ptfDF,1)
+        if ptfDF[Symbol("$(cvar1)_bucket")][row]<=5 && ptfDF[Symbol("$(cvar2)_bucket")][row]<=5
+            ptfDF[:doublefreqsort][row] = 1
+        elseif ptfDF[Symbol("$(cvar1)_bucket")][row]<=5 && ptfDF[Symbol("$(cvar2)_bucket")][row]>5
+            ptfDF[:doublefreqsort][row] = 2
+        elseif ptfDF[Symbol("$(cvar1)_bucket")][row]>5 && ptfDF[Symbol("$(cvar2)_bucket")][row]<=5
+            ptfDF[:doublefreqsort][row] = 3
+        elseif ptfDF[Symbol("$(cvar1)_bucket")][row]>5 && ptfDF[Symbol("$(cvar2)_bucket")][row]>5
+            ptfDF[:doublefreqsort][row] = 4
+        end
+    end
+    return ptfDF
+end
+
+
+
+function regToCsv(rowvar, resdic, depvars, eadchoice, ds, sousdic)
+    resmat = ones(Float64, 5,5)
+    for i in resdic
+        id = i[1]
+        val, sz = parse(Int, "$id"[1]), parse(Int, "$id"[2])
+        try
+            resmat[val,sz] = i[2][sousdic][:coefficients][rowvar,Symbol("t-value")]
+        catch
+            print("key $sousdic missing")
+        end
+    end
+    CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/regs/$(eadchoice)/ds_$(ds)_r$(rowvar)_$(depvars).csv", DataFrame(resmat))
 end
