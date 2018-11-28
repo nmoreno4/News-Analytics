@@ -8,7 +8,8 @@ tdperiods = (1,3776)
 @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/simple_HML_Dates.day_(1, 3776).jld2"
 HMLDic = deepcopy(aggDicFreq)
 # @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintiles/quintiles_Dates.day_(1, 3776).jld2"
-@time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintilenew_Dates.day_(1, 3776).jld2"
+# @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/quintilenew_Dates.day_(1, 3776).jld2"
+@time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/allobs_Dates.day_(1, 3776).jld2"
 
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 quintileids = [x*10+y for x in 1:5 for y in 1:5]
@@ -18,78 +19,99 @@ for i in names(keepgoodcolumns(aggDicFreq[55], ["", "RES", "CMPNY", "MRG", "RESF
     print("$i \n")
 end
 
-a = copy(aggDicFreq[11])
-b = by_means(a, [:sum_perNbStories_, :sum_perNbStories_RES, :sum_perNbStories_CMPNY, :sum_perNbStories_MRG, :sum_perNbStories_RESF], :permno)
-c = b[:mean_sum_perNbStories_]
-d = a[:sum_perNbStories_RES]
-mean(replace(c, missing=>0))
 
-
-ds = 4
-varsformeans = [:aggSent_RES, :aggSent_, :cumret, :sum_perNbStories_, :sum_perNbStories_RES,
-                :sum_perNbStories_CMPNY, :sum_perNbStories_MRG, :sum_perNbStories_RESF,
-                :aggSent_CMPNY, :aggSent_MRG, :aggSent_RESF]
+varsformeans = [:aggSent_, :aggSent_RES, :aggSent_CMPNY, :aggSent_MRG, :aggSent_RESF,
+                :sum_perNbStories_, :sum_perNbStories_RES, :sum_perNbStories_CMPNY,
+                :sum_perNbStories_MRG, :sum_perNbStories_RESF,
+                :aggSent__1_5, :aggSent__1_20, :aggSent_RES_1_5,
+                :cumret, :cumret__1_5, :cumret__1_20]
+dsfilters = ["", "RES", "RESF"]
+dsspan = 0:4
 resmats = Dict()
 for i in varsformeans
-    resmats[i] = ones(Float64, 5,5)
-    resmats["sz_timmerman_$(i)"] = Dict()
-    resmats["val_timmerman_$(i)"] = Dict()
+    resmats[i] = ones(Union{Float64,Missing}, 5,5)
+    resmats["series_$(i)"] = Dict()
 end
-eads = [:EAD, Symbol("aroundEADm1:1:1"), :everyEAD]
+eads = [:everyEAD, Symbol("aroundEADm1:1:1"), Symbol("aroundEADm5:1:m1"), Symbol("aroundEAD1:1:5"), :EAD]
 resWead = Dict()
 for i in eads
-    resWead[i] = deepcopy(resmats)
-end
-for id in quintileids
-    print(id)
-    val, sz = parse(Int, "$id"[1]), parse(Int, "$id"[2])
-    ptfDF = copy(aggDicFreq[id])
-    ptfDF = keepgoodcolumns(ptfDF, ["", "RES", "CMPNY", "MRG", "RESF"])
-    ptfDF[:everyEAD] = 1
-    ptfDF[:aggSent_CMPNY] = ptfDF[:sum_perSent_CMPNY] ./ ptfDF[:sum_perNbStories_CMPNY]
-    ptfDF[:aggSent_MRG] = ptfDF[:sum_perSent_MRG] ./ ptfDF[:sum_perNbStories_MRG]
-    ptfDF[:aggSent_RESF] = ptfDF[:sum_perSent_RESF] ./ ptfDF[:sum_perNbStories_RESF]
-
-    namesWNOminus = [Symbol(replace(replace(replace(String(x), "t_-"=>"t__-"), "-"=>"m"), "ret_"=>"cumret_")) for x in names(ptfDF)]
-    names!(ptfDF, namesWNOminus)
-
-
-    for i in varsformeans
-        if String(i)[end-2:end] in ["RES", "CMPNY", "MRG", "RESF"]
-            top = String(i)[end-2:end]
-        else
-            top = ""
-        end
-        ptfDF = @time createdoublesort(ptfDF, Symbol("aggSent_$(top)_m5_m1"), Symbol("aggSent_$(top)_m60_m1"))
-        # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m20_m1"), 10:10:100)
-        # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m60_m1"), 10:10:100)
-        # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m120_m1"), 10:10:100)
-
-        if ds==0
-            provbuckfDF = ptfDF[ptfDF[:doublefreqsort].>=0,:]
-        else
-            provbuckfDF = ptfDF[ptfDF[:doublefreqsort].==ds,:]
-        end
-        for ead in eads
-            provbuckfDF[ead] = replace(provbuckfDF[ead], missing=>0)
-            provtfDF = provbuckfDF[provbuckfDF[ead].==1,:]
-
-            means_stock_sent = by_means(provtfDF, [i], :permno)
-            resWead[ead][i][val,sz] = colmeans_to_dic(means_stock_sent)[Symbol("mean_$(i)")]
-
-            means_td_sent = by_means(provtfDF, [i], :perid)
-            means_td_sent = daysWNOead(tdperiods, means_td_sent, [Symbol("mean_$(i)")])
-            if !(val in keys(resmats["val_timmerman_$(i)"]))
-                resWead[ead]["val_timmerman_$(i)"][val] = Dict()
-            end
-            if !(sz in keys(resmats["sz_timmerman_$(i)"]))
-                resWead[ead]["sz_timmerman_$(i)"][sz] = Dict()
-            end
-            resWead[ead]["sz_timmerman_$(i)"][sz] = concat_ts_timmerman!(means_td_sent, resWead[ead]["sz_timmerman_$(i)"][sz], sz, Symbol("mean_$(i)"))
-            resWead[ead]["val_timmerman_$(i)"][val] = concat_ts_timmerman!(means_td_sent, resWead[ead]["val_timmerman_$(i)"][val], val, Symbol("mean_$(i)"))
-        end
+    resWead[i] = Dict()
+    for ds in dsspan
+        resWead[i][ds] = deepcopy(resmats)
     end
 end
+
+resWead = @time computemeans(aggDicFreq, quintileids, resWead, eads, varsformeans, dsfilters, dsspan)
+
+include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
+for ds in dsspan
+    for ead in eads
+        spec = resWead[ead][ds]
+        foo = concatspecststats(resWead[ead][ds], varsformeans)
+        nead = replace(String(ead), ":"=>"_")
+        foo = replace(foo, missing=>NaN)
+        CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/AVGs/ds$(ds)_$(nead).csv", DataFrame(foo))
+    end
+end
+
+print("a")
+include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
+for ds in 1:4
+    for ead in [:everyEAD, :EAD]
+        print("$ead $ds")
+        spec2 = resWead[ead][0]
+        spec1 = resWead[ead][ds]
+        foo = concatspecststatsDiffs(spec1, spec2, varsformeans)
+        nead = replace(String(ead), ":"=>"_")
+        foo = replace(foo, missing=>NaN)
+        CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/AVGs/DIFFDS_ds$(ds)_$(nead).csv", DataFrame(foo))
+    end
+end
+
+print("b")
+for ead in [Symbol("aroundEADm1:1:1"), Symbol("aroundEADm5:1:m1"), Symbol("aroundEAD1:1:5"), :EAD]
+    for ds in 0:4
+        print("$ead $ds")
+        spec2 = resWead[:everyEAD][ds]
+        spec1 = resWead[ead][ds]
+        foo = concatspecststatsDiffs(spec1, spec2, varsformeans)
+        nead = replace(String(ead), ":"=>"_")
+        foo = replace(foo, missing=>NaN)
+        CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/AVGs/DIFFEAD_ds$(ds)_$(nead).csv", DataFrame(foo))
+    end
+end
+
+
+print("c")
+varsformeans = [:aggSent_RES, :aggSent_CMPNY, :aggSent_MRG, :aggSent_RESF]
+for ead in [:everyEAD, Symbol("aroundEADm1:1:1"), Symbol("aroundEADm5:1:m1"), Symbol("aroundEAD1:1:5"), :EAD]
+    for ds in 0:4
+        print("$ead $ds")
+        spec = resWead[ead][ds]
+        foo = concatspecststatsDiffsTopics(spec, varsformeans, :aggSent_)
+        nead = replace(String(ead), ":"=>"_")
+        foo = replace(foo, missing=>NaN)
+        CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/AVGs/DIFFsentTOPIC_ds$(ds)_$(nead).csv", DataFrame(foo))
+    end
+end
+
+
+print("d")
+varsformeans = [:sum_perNbStories_RES, :sum_perNbStories_CMPNY, :sum_perNbStories_MRG, :sum_perNbStories_RESF]
+for ead in [:everyEAD, Symbol("aroundEADm1:1:1"), Symbol("aroundEADm5:1:m1"), Symbol("aroundEAD1:1:5"), :EAD]
+    for ds in 0:4
+        print("$ead $ds")
+        spec = resWead[ead][ds]
+        foo = concatspecststatsDiffsTopics(spec, varsformeans, :sum_perNbStories_)
+        nead = replace(String(ead), ":"=>"_")
+        foo = replace(foo, missing=>NaN)
+        CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/AVGs/DIFFcoverageTOPIC_ds$(ds)_$(nead).csv", DataFrame(foo))
+    end
+end
+
+
+
+
 timmermanns = Dict()
 for ead in resWead
     for result in ead[2]
@@ -103,6 +125,8 @@ for ead in resWead
         end
     end
 end
+
+
 
 for ptf in quintileids
     ptfDF = copy(aggDicFreq[ptf])
@@ -120,7 +144,7 @@ ptfDF = buckets_assign(ptfDF, :aggSent_, 10:10:100)
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 
 
-for doublesort in 0:4
+for doublesort in [0]#0:4
     print("\n\n\n\n\n\n\n\n\nDOUBLESOOOOORT : $doublesort \n\n\n\n\n\n\n\n\n\n")
     #:EAD, :everyEAD
     eadchoice = :everyEAD
@@ -128,7 +152,7 @@ for doublesort in 0:4
                 Symbol("aggSent_RES_-1_0"), Symbol("aggSent_RES_-5_-1"), Symbol("aggSent_RES_-20_-1"), Symbol("aggSent_RES_-60_-1"), :ret__1_20];
     cptfvarsNOMINUS = [Symbol(replace(String(x), "-"=>"m")) for x in cptfvars]
     resdic = Dict()
-    for ptf in [x*10+y for x in 1:5 for y in 1:5]
+    for ptf in [1]#[x*10+y for x in 1:5 for y in 1:5]
         try
             print("\n \n \n \n THIS IS PTF: $ptf \n \n \n \n")
             resdic[ptf] = Dict()
@@ -194,6 +218,77 @@ for doublesort in 0:4
         end
     end
 end
+
+
+
+ptfDF = @time keepgoodcolumns(copy(aggDicFreq[1]), ["", "RES", "RESF"])
+
+####!!! I should group by ptf for the surprise series!!!
+####!!! Individual suprise should group by permno
+####!!! I should have market return etc for the future controls!!!
+####!!! Lagged returns
+####!!! Compute the market surprise
+vars = [((:sum_perSent_, :sum_perNbStories_), (:sum_perSent_, :sum_perNbStories_)),
+        ((:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES)),
+        ((:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))]
+windows = [(60, 5), (20,5), (60,2), (20,2)]
+excluderecent = true
+
+ptfDF[:perid] = Int.(ptfDF[:perid])
+
+oooo = @time computesurprises(ptfDF, vars, windows)
+
+LTspecs = [(60, :aggSent_), (60, :aggSent_RESF), (20, :aggSent_), (20, :aggSent_RESF),
+            (60, :aggSent_), (60, :aggSent_RESF), (20, :aggSent_), (20, :aggSent_RESF)]
+STspecs = [(5, :aggSent_RES), (5, :aggSent_RES), (5, :aggSent_RES), (5, :aggSent_RES),
+            (2, :aggSent_RES), (2, :aggSent_RES), (2, :aggSent_RES), (2, :aggSent_RES)]
+bbbb = @time marketSurprises(ptfDF, LTspecs, STspecs, "VW")
+
+@time ptfDF[:surp_RESF_RES_60_5] = surpriseSeriesDF(ptfDF, 60, 5, (:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES))
+ptfDF[:surp_ALL_RES_60_5] = surpriseSeriesDF(ptfDF, 60, 5, (:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))
+ptfDF[:surp_RESF_RES_20_5] = surpriseSeriesDF(ptfDF, 20, 5, (:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES))
+ptfDF[:surp_ALL_RES_20_5] = surpriseSeriesDF(ptfDF, 20, 5, (:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))
+ptfDF[:surp_RESF_RES_60_2] = surpriseSeriesDF(ptfDF, 60, 2, (:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES))
+ptfDF[:surp_ALL_RES_60_2] = surpriseSeriesDF(ptfDF, 60, 2, (:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))
+surprisevars = [:surp_RESF_RES_60_5, :surp_ALL_RES_60_5, :surp_RESF_RES_20_5, :surp_ALL_RES_20_5, :surp_RESF_RES_60_2, :surp_ALL_RES_60_2]
+ptfDF[:EAD] = replace(ptfDF[:EAD], missing=>0)
+ptfDF[:ND] = replace(ptfDF[:sum_perNbStories_] ./ ptfDF[:sum_perNbStories_], missing=>0)
+cptfvars = [[:cumret, :momrank, :bmdecile, :sizedecile, :EAD, :ND]; surprisevars];
+hmlsurprisevars = [:surpHML_ALL_RES_60_5, :surpHML_ALL_RES_20_5, :surpHML_ALL_RES_60_2, :surpHML_ALL_RES_20_2, :surpHML_ALL_RES_60_10]
+paneldf = @time createPanelDF(ptfDF, HMLDic, ptfvars = cptfvars, runninglags = [60,20,5], tdperiods = tdperiods, HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES]);
+namesWNOminus = [Symbol(replace(replace(String(x), "t_-"=>"t__-"), "-"=>"m")) for x in names(paneldf)]
+names!(paneldf, namesWNOminus)
+a=paneldf[[[:permno, :perid, :cumret, :bmdecile, :sizedecile, :momrank, :EAD, :ND, :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom] ; cptfvars ; hmlsurprisevars]]
+a[:invertmom] = replace(abs.(a[:momrank] .- 11), missing=>5)
+a[:aggSent_] = ptfDF[:aggSent_]
+a[:ret__1_5] = ptfDF[:ret__1_5]
+a[:ret__1_20] = ptfDF[:ret__1_20]
+a[:ret__0_1] = ptfDF[:ret__0_1]
+a[:anomsum] = a[:invertmom] .+ a[:bmdecile] .+ a[:sizedecile]
+@time @rput a
+R"library(plm)"
+@time R"E <- pdata.frame(a, index=c('permno', 'perid'))";
+@time R"mod3 <- plm(ret__1_20 ~ surp_RESF_RES_60_2*bmdecile + surp_RESF_RES_60_2:EAD + surp_RESF_RES_60_2:ND + surpHML_ALL_RES_60_5*bmdecile + surpHML_ALL_RES_60_5:EAD + surpHML_ALL_RES_60_5:ND + Mkt_RF + SMB + HML + Mom, data = E, model = 'within')";
+@time R"res = summary(mod3)"
+@time R"mod <- plm(cumret ~ surpHML_ALL_RES_60_5*bmdecile*EAD*ND + Mkt_RF + SMB + HML + Mom, data = E, model = 'within')";
+R"res = summary(mod)"
+@time R"mod1 <- plm(ret__1_5 ~ surpHML_ALL_RES_60_5*bmdecile + surpHML_ALL_RES_60_5:EAD + surpHML_ALL_RES_60_5:ND + Mkt_RF + SMB + HML + Mom, data = E, model = 'within')";
+@time R"res = summary(mod1)"
+@time R"mod2 <- plm(ret__1_5 ~ surp_RESF_RES_60_2*bmdecile + surp_RESF_RES_60_2:EAD + surp_RESF_RES_60_2:ND + surpHML_ALL_RES_60_5*bmdecile + surpHML_ALL_RES_60_5:EAD + surpHML_ALL_RES_60_5:ND + Mkt_RF + SMB + HML + Mom, data = E, model = 'within')";
+@time R"res = summary(mod2)"
+
+
+for i in names(ptfDF)
+    print("$i\n")
+end
+
+
+
+
+
+
+
+
 
 
 

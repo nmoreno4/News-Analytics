@@ -191,7 +191,7 @@ end
 
 
 
-function HMLspreads(HMLDic, chosenvars, ws="VW")
+function HMLspreads(HMLDic, chosenvars, ws="VW", surprises=false)
     HMLids = [(x,y) for x in [(1,3), (8,10), (4,7)] for y in [(1,5), (6,10)]]
 
     w_vars = [Symbol("w_$(x)") for x in chosenvars]
@@ -207,6 +207,14 @@ function HMLspreads(HMLDic, chosenvars, ws="VW")
         H_VW = (replace(SH[XW_vars[i]], missing=>0) .+ replace(BH[XW_vars[i]], missing=>0)) ./ 2
         L_VW = (replace(SL[XW_vars[i]], missing=>0) .+ replace(BL[XW_vars[i]], missing=>0)) ./ 2
         res[Symbol("HML_$(XW_vars[i])")] = H_VW .- L_VW
+    end
+
+    if surprises
+        res[:surpHML_ALL_RES_60_5] = surpriseSeriesHML(60,5,res[:HML_VW_aggSent_], res[:HML_VW_aggSent_RES])
+        res[:surpHML_ALL_RES_20_5] = surpriseSeriesHML(20,5,res[:HML_VW_aggSent_], res[:HML_VW_aggSent_RES])
+        res[:surpHML_ALL_RES_60_2] = surpriseSeriesHML(60,2,res[:HML_VW_aggSent_], res[:HML_VW_aggSent_RES])
+        res[:surpHML_ALL_RES_20_2] = surpriseSeriesHML(20,2,res[:HML_VW_aggSent_], res[:HML_VW_aggSent_RES])
+        res[:surpHML_ALL_RES_60_10] = surpriseSeriesHML(60,10,res[:HML_VW_aggSent_], res[:HML_VW_aggSent_RES])
     end
 
     return res
@@ -228,11 +236,14 @@ function concat_groupInvariant_vars(c, regDF, firstnew)
     for i in names(regDF)
         c[i] = 0
     end
-    for i in names(c)
+    @time for i in names(c)
         c[i] = convert(Array{Union{Float64,Missing}}, c[i])
     end
     for row in 1:size(c,1)
         c[row,firstnew:end] = regDF[Int(c[row,:perid]),:]
+        if row in [10000,1000000,5000000,10000000]
+            print(row)
+        end
     end
     return c
 end
@@ -250,13 +261,13 @@ end
 
 
 
-function createPanelDF(ptfDF, HMLDic; runninglags = [250,60,20,5], HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_], tdperiods = (1,3776))
-    HMLnico = HMLspreads(HMLDic, HMLvars)
+function createPanelDF(ptfDF, HMLDic; runninglags = [250,60,20,5], HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_], tdperiods = (1,3776), surprises = true)
+    @time HMLnico = HMLspreads(HMLDic, HMLvars, "VW", surprises)
     FFfactors = loadFFfactors()
     HMLnico[:HML_VW_cumret] = HMLnico[:HML_VW_cumret] .- FFfactors[:RF]
     HMLnico = DataFrame(HMLnico)
     for i in names(HMLnico)
-        for lag in runninglags
+        @time for lag in runninglags
             chosenfct = custom_mean
             if String(i)[end-2:end]=="ret"
                 chosenfct = cumret
@@ -268,15 +279,17 @@ function createPanelDF(ptfDF, HMLDic; runninglags = [250,60,20,5], HMLvars = [:s
 
     stackDF = ptfDF[[ptfvars; [:perid, :permno, :wt]]]
     firstnew = size(stackDF, 2)
-    ptfSpecific = EW_VW_series(ptfDF, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
-    ptfSpecific = daysWNOead(tdperiods, ptfSpecific, names(ptfSpecific))
+    print("VWseries")
+    ptfSpecific = @time EW_VW_series(ptfDF, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
+    ptfSpecific = @time daysWNOead(tdperiods, ptfSpecific, names(ptfSpecific))
     delete!(ptfSpecific, [:perid])
     delete!(stackDF, [:wt])
     names!(ptfSpecific, [Symbol("ptf_$(x)") for x in names(ptfSpecific)])
-    groupInvariants = hcat(FFfactors, DataFrame(HMLnico), ptfSpecific)
+    groupInvariants = hcat(FFfactors, convert(DataFrame, HMLnico), ptfSpecific)
     delete!(groupInvariants, :Date)
-    stackDF = excessRet(stackDF, [:cumret], groupInvariants[:RF])
-    paneldf = concat_groupInvariant_vars(stackDF, groupInvariants, firstnew)
+    print("hey")
+    stackDF = @time excessRet(stackDF, [:cumret], groupInvariants[:RF])
+    paneldf = @time concat_groupInvariant_vars(stackDF, groupInvariants, firstnew)
 
     return paneldf
 end
@@ -375,4 +388,344 @@ function regToCsv(rowvar, resdic, depvars, eadchoice, ds, sousdic)
         end
     end
     CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/regs/$(eadchoice)/ds_$(ds)_r$(rowvar)_$(depvars).csv", DataFrame(resmat))
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function computemeans(aggDicFreq, quintileids, resWead, eads, varsformeans, pastsentTopicClass = true, dsspan=0:4)
+    for id in quintileids
+        print("PTF: $id \n")
+        val, sz = parse(Int, "$id"[1]), parse(Int, "$id"[2])
+        ptfDF = copy(aggDicFreq[id])
+        ptfDF = keepgoodcolumns(ptfDF, ["", "RES", "CMPNY", "MRG", "RESF"])
+        ptfDF[:everyEAD] = 1
+        ptfDF[:aggSent_CMPNY] = ptfDF[:sum_perSent_CMPNY] ./ ptfDF[:sum_perNbStories_CMPNY]
+        ptfDF[:aggSent_MRG] = ptfDF[:sum_perSent_MRG] ./ ptfDF[:sum_perNbStories_MRG]
+        ptfDF[:aggSent_RESF] = ptfDF[:sum_perSent_RESF] ./ ptfDF[:sum_perNbStories_RESF]
+
+        namesWNOminus = [Symbol(replace(replace(replace(String(x), "t_-"=>"t__-"), "-"=>"m"), "ret_"=>"cumret_")) for x in names(ptfDF)]
+        names!(ptfDF, namesWNOminus)
+
+
+        for top in pastsentTopicClass
+            print("pastsentTopicClass: $top \n")
+            ptfDF = createdoublesort(ptfDF, Symbol("aggSent_$(top)_m5_m1"), Symbol("aggSent_$(top)_m60_m1"))
+            # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m20_m1"), 10:10:100)
+            # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m60_m1"), 10:10:100)
+            # ptfDF = buckets_assign(ptfDF, Symbol("aggSent_$(top)_m120_m1"), 10:10:100)
+
+
+            for ds in dsspan
+                resWead = @time meansdsspan(resWead, ptfDF, ds, eads, varsformeans, sz, val)
+            end #for ds
+        end
+    end
+    return resWead
+end
+
+
+
+function meansdsspan(resWead, ptfDF, ds, ead, varsformeans, sz, val)
+    if ds==0
+        provbuckfDF = ptfDF
+    else
+        provbuckfDF = ptfDF[ptfDF[:doublefreqsort].==ds,:]
+    end
+    for ead in eads
+        provbuckfDF[ead] = replace(provbuckfDF[ead], missing=>0)
+        provtfDF = provbuckfDF[provbuckfDF[ead].==1,:]
+        for i in varsformeans
+            # if i == :cumret
+            #     provtfDF = provtfDF[provtfDF[:doublefreqsort].>0,:]
+            # end
+            try
+                means_stock_sent = by_means(provtfDF, [i], :permno)
+                resWead[ead][ds][i][val,sz] = colmeans_to_dic(means_stock_sent)[Symbol("mean_$(i)")]
+                quintile = val*10+sz
+                if !(quintile in keys(resmats["series_$(i)"]))
+                    resWead[ead][ds]["series_$(i)"][quintile] = Dict()
+                end
+                resWead[ead][ds]["series_$(i)"][quintile] = means_stock_sent[Symbol("mean_$(i)")]
+            catch crterror
+                # print("$ds $i $ead \n")
+                # print("$(by_means(provtfDF, [i], :permno))")
+                # for i in names(means_stock_sent)
+                #     print("\n$i    ")
+                # end
+                # error(crterror)
+                push!(provtfDF, zeros(size(provtfDF,2))) #Array{Union{Missing, Float64},1}(missing,size(provtfDF,2))
+                means_stock_sent = by_means(provtfDF, [i], :permno)
+                resWead[ead][ds][i][val,sz] = colmeans_to_dic(means_stock_sent)[Symbol("mean_$(i)")]
+                quintile = val*10+sz
+                if !(quintile in keys(resmats["series_$(i)"]))
+                    resWead[ead][ds]["series_$(i)"][quintile] = Dict()
+                end
+                resWead[ead][ds]["series_$(i)"][quintile] = means_stock_sent[Symbol("mean_$(i)")]
+            end
+        end
+    end
+    return resWead
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function savetimmermann(resWead)
+    dfs = Dict()
+    for ead in resWead
+        try
+            size(dfs[ead[1]])
+        catch
+            dfs[ead[1]] = Dict()
+        end
+        for ds in ead[2]
+            try
+                size(dfs[ead[1]][ds[1]])
+            catch
+                dfs[ead[1]][ds[1]] = Dict()
+            end
+            for result in ds[2]
+                try
+                    size(dfs[ead[1]][ds[1]][result[1]])
+                catch
+                    dfs[ead[1]][ds[1]][result[1]] = Dict()
+                end
+                if typeof(result[1])==Symbol
+                    dfs[ead[1]][ds[1]][result[1]]["5x5"] = result[2]
+                else
+                    X = ptfEWmean(result[2])
+                    @time MR = timmerman(X, 2)
+                    dfs[ead[1]][ds[1]][result[1]]["timm"] = MR
+                end
+            end
+        end
+    end
+    return dfs
+end
+
+
+
+
+
+function addtstats(a, b, var=0)
+    szpairs = ([11,15], [21,25], [31,35], [41,45], [51,55])
+    valpairs = ([11,51], [12,52], [13,53], [14,54], [15,55])
+    for ptfpairs in (szpairs, valpairs)
+        res = Union{Missing,Float64}[]
+        for i in 1:length(ptfpairs)
+            if length(a)==2
+                try
+                    v1 = replace(a[1][ptfpairs[i][1]] .- a[2][ptfpairs[i][1]], missing=>0)
+                    v2 = replace(a[1][ptfpairs[i][2]] .- a[2][ptfpairs[i][2]], missing=>0)
+                catch
+                    foo = a[1][ptfpairs[i][1]]
+                    bar = a[2][ptfpairs[i][1]]
+                    commonlength = minimum([length(foo), length(bar)])
+                    v1 = replace(foo[1:commonlength] .- bar[1:commonlength], missing=>0)
+                    foo = a[1][ptfpairs[i][2]]
+                    bar = a[2][ptfpairs[i][2]]
+                    commonlength = minimum([length(foo), length(bar)])
+                    v2 = replace(foo[1:commonlength] .- bar[1:commonlength], missing=>0)
+                end
+            else
+                v1 = replace(a[ptfpairs[i][1]], missing=>0)
+                v2 = replace(a[ptfpairs[i][2]], missing=>0)
+            end
+            if length(v1)==0
+                print(length(a))
+            end
+            push!(res, Rttest(v1, v2))
+        end
+        if ptfpairs[1] == [11,15]
+            b = hcat(b, res)
+        else
+            b = vcat(b, [res;missing]')
+        end
+    end
+    return b
+end
+
+
+
+function Rttest(x, y)
+    try
+        @rput x ; @rput y
+        R"library(ggpubr)"
+        R"a = t.test(x, y)$statistic"
+        @rget a
+        return a
+    catch
+        return missing
+    end
+end
+
+
+
+function concatspecststats(spec, varsformeans)
+    res = []
+    for i in varsformeans
+        mat = spec[i]
+        ser = spec["series_$(i)"]
+        matWtstat = addtstats(ser,mat)
+        if res==[]
+            res = matWtstat
+        else
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, matWtstat)
+        end
+    end
+    return res
+end
+
+
+
+function concatspecststatsDiffs(spec1, spec2, varsformeans)
+    res = []
+    for i in varsformeans
+        mat = spec1[i] .- spec2[i]
+        ser = (spec1["series_$(i)"], spec2["series_$(i)"])
+        matWtstat = addtstats(ser,mat, i)
+        if res==[]
+            res = matWtstat
+        else
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, matWtstat)
+        end
+    end
+    return res
+end
+
+
+
+
+function concatspecststatsDiffsTopics(spec, varsformeans, reftopic)
+    res = []
+    for i in varsformeans
+        mat = spec[i] .- spec[reftopic]
+        ser = (spec["series_$(i)"], spec["series_$(reftopic)"])
+        matWtstat = addtstats(ser,mat)
+        if res==[]
+            res = matWtstat
+        else
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, convert(Array{Union{Float64,Missing}}, ones(6)).*missing)
+            res = hcat(res, matWtstat)
+        end
+    end
+    return res
+end
+
+
+
+function surpriseSeriesDF(ptfDF, LTwindow, STwindow, LTvar, STvar)
+    LTsent = replace(running(custom_sum, ptfDF[LTvar[1]], LTwindow) ./ running(custom_sum,ptfDF[LTvar[2]], LTwindow), NaN=>missing)
+    STsent = replace(running(custom_sum, ptfDF[STvar[1]], STwindow) ./ running(custom_sum,ptfDF[STvar[2]], STwindow), NaN=>missing)
+    res = STsent .- LTsent
+    return res
+end
+
+function surpriseSeriesHML(LTwindow, STwindow, LTvar, STvar)
+    LTsent = replace(running(custom_mean, LTvar, LTwindow), NaN=>missing)
+    STsent = replace(running(custom_mean, STvar, STwindow), NaN=>missing)
+    res = STsent .- LTsent
+    return res
+end
+
+
+
+function fillmissing(cdf, tdsymb, valsymb, tdperiods)
+    b = Array{Union{Float64,Missing}}(missing, tdperiods[2]-tdperiods[1]+1)
+    for i in 1:size(cdf,1)
+        b[Int(cdf[i,tdsymb])] = cdf[i,valsymb]
+    end
+    return b
+end
+
+
+
+
+function computesurprises(ptfDF, vars, windows)
+    @time a = by(ptfDF, :permno) do df
+        res = Dict()
+        tokeep = df[:perid]
+        for var in vars
+            LTvar, STvar = var[1], var[2]
+            for win in windows
+                LTwindow, STwindow = win[1], win[2]
+                if excluderecent
+                    LTwVec = ones(Union{Float64}, LTwindow)
+                    LTwVec[end-STwindow+1:end] .= 0
+                else
+                    LTwVec = ones(Union{Float64}, LTwindow)
+                end
+                A = fillmissing(df, :perid, LTvar[1], tdperiods)
+                B = fillmissing(df, :perid, LTvar[2], tdperiods)
+                LTsent = replace(running(custom_sum, A, LTwindow, LTwVec) ./ running(custom_sum,B, LTwindow, LTwVec), NaN=>missing)
+                A = fillmissing(df, :perid, STvar[1], tdperiods)
+                B = fillmissing(df, :perid, STvar[2], tdperiods)
+                STsent = replace(running(custom_sum, A, STwindow) ./ running(custom_sum,B, STwindow), NaN=>missing)
+                res[Symbol("$(var)_$(win)")] = LTsent[tokeep] .- STsent[tokeep]
+            end
+        end
+        DataFrame(res)
+    end
+    return res
+end
+
+
+
+function marketSurprises(ptfDF, LTspecs, STspecs, ws)
+    allvars = []
+    for cspecs in (LTspecs, STspecs)
+        for (x,y) in cspecs
+            push!(allvars, y)
+        end
+    end
+    ptfvars = Set(allvars)
+    prov = EW_VW_series(ptfDF, [Symbol("mkt_$x") for x in ptfvars], ptfvars)
+    mktsurprises = Dict()
+    for (LTspec,STspec) in zip(LTspecs, STspecs)
+        LTwindow, STwindow = LTspec[1], STspec[1]
+        LTvar, STvar =  LTspec[2], STspec[2]
+        LTwVec = ones(Union{Float64}, LTwindow)
+        LTwVec[end-STwindow+1:end] .= 0
+        LTnews = running(custom_mean, convert(Array{Union{Float64,Missing}}, prov[Symbol("$(ws)_$(LTvar)")]), LTwindow, LTwVec)
+        STnews = running(custom_mean, convert(Array{Union{Float64,Missing}}, prov[Symbol("$(ws)_$(STvar)")]), STwindow)
+        mktsurprises[Symbol("LT$(LTwindow)_ST$(STwindow)")] = replace(LTnews .- STnews, NaN=>missing)
+    end
+    return mktsurprises
 end

@@ -2,10 +2,14 @@
 #Allow for RES and other types of news
 #Allow for around EAD
 
+# chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_nov24H",
+#               "EAD", "nbStories_rel100_nov24H_RES", "sent_rel100_nov24H_RES", "vol", "roa",
+#               "nbStories_rel100_nov24H_CMPNY", "sent_rel100_nov24H_CMPNY",
+#               "nbStories_rel100_nov24H_MRG", "sent_rel100_nov24H_MRG",
+#               "nbStories_rel100_nov24H_RESF", "sent_rel100_nov24H_RESF"]
 chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_nov24H",
               "EAD", "nbStories_rel100_nov24H_RES", "sent_rel100_nov24H_RES", "vol", "roa",
-              "nbStories_rel100_nov24H_CMPNY", "sent_rel100_nov24H_CMPNY",
-              "nbStories_rel100_nov24H_MRG", "sent_rel100_nov24H_MRG",
+              "momrank", "bmdecile", "sizedecile",
               "nbStories_rel100_nov24H_RESF", "sent_rel100_nov24H_RESF"]
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
@@ -38,19 +42,38 @@ mongo_collection = db[collname]
 # quintileDFs = HMLDFs
 
 
-quintileDic = Dict()
-for val in 1:5
-    @time for sz in 1:5
-        quintileDic[val*10+sz] = queryDB_doublefilt_Dic(["bmdecile", "sizedecile"], tdperiods, chosenVars, (val*2-1, val*2), (sz*2-1, sz*2), mongo_collection)
-    end
+# quintileDic = Dict()
+# for val in 1:5
+#     @time for sz in 1:5
+#         quintileDic[val*10+sz] = queryDB_doublefilt_Dic(["bmdecile", "sizedecile"], tdperiods, chosenVars, (val*2-1, val*2), (sz*2-1, sz*2), mongo_collection)
+#     end
+# end
+# # JLD.save("/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df.jld", "quintileDic", quintileDic)
+# # Transform Dic to DF
+# quintileids = [x*10+y for x in 1:5 for y in 1:5]
+# quintileDFs = Dict()
+# @time for id in quintileids
+#     quintileDFs[id] = queryDic_to_df(quintileDic[id], [chosenVars; "permno"; "td"])
+# end
+
+
+
+allobs = Dict()
+allobs[1] = queryDB_doublefilt_Dic(["bmdecile", "sizedecile"], tdperiods, chosenVars, (0, 11), (0, 11), mongo_collection)
+# Transform Dic to DF
+quintileDFs = Dict()
+quintileids = [1]
+for ptf in quintileids
+    quintileDFs[ptf] = queryDic_to_df(allobs[1] , [chosenVars; "permno"; "td"])
 end
 # JLD.save("/run/media/nicolas/Research/SummaryStats/Prov/test_quintiles_df.jld", "quintileDic", quintileDic)
-# Transform Dic to DF
-quintileids = [x*10+y for x in 1:5 for y in 1:5]
-quintileDFs = Dict()
-@time for id in quintileids
-    quintileDFs[id] = queryDic_to_df(quintileDic[id], [chosenVars; "permno"; "td"])
-end
+
+
+
+
+
+
+
 
 around_EAD = -1:1:1
 @time for ptf in quintileids
@@ -66,14 +89,19 @@ around_EAD_post = 1:1:5
 end
 
 operationsDic = Dict()
+# operationsDic["sums"] = [custom_sum_missing,
+#                             [:sum_perSent_, :sum_perNbStories_, :sum_perSent_RES, :sum_perNbStories_RES,
+#                             :sum_perSent_CMPNY, :sum_perNbStories_CMPNY, :sum_perSent_MRG, :sum_perNbStories_MRG, :sum_perSent_RESF, :sum_perNbStories_RESF],
+#                             [:sent_rel100_nov24H, :nbStories_rel100_nov24H, :sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES,
+#                             :sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY, :sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG, :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
 operationsDic["sums"] = [custom_sum_missing,
                             [:sum_perSent_, :sum_perNbStories_, :sum_perSent_RES, :sum_perNbStories_RES,
-                            :sum_perSent_CMPNY, :sum_perNbStories_CMPNY, :sum_perSent_MRG, :sum_perNbStories_MRG, :sum_perSent_RESF, :sum_perNbStories_RESF],
+                            :sum_perSent_RESF, :sum_perNbStories_RESF],
                             [:sent_rel100_nov24H, :nbStories_rel100_nov24H, :sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES,
-                            :sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY, :sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG, :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
+                            :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
 operationsDic["lastels"] = [getlast,
-                            [:permno, :wt, :perid],
-                            [:permno, :dailywt, :perid]]
+                            [:permno, :wt, :perid, :roa, :vol, :momrank, :bmdecile, :sizedecile],
+                            [:permno, :dailywt, :perid,  :roa, :vol, :momrank, :bmdecile, :sizedecile]]
 operationsDic["cumrets"] = [cumret,
                             [:cumret],
                             [:dailyretadj]]
@@ -81,13 +109,16 @@ operationsDic["maxs"] = [custom_max,
                             [:EAD, Symbol("aroundEAD$(around_EAD)"), Symbol("aroundEAD$(around_EAD_prev)"), Symbol("aroundEAD$(around_EAD_post)")],
                             [:EAD, Symbol("aroundEAD$(around_EAD)"), Symbol("aroundEAD$(around_EAD_prev)"), Symbol("aroundEAD$(around_EAD_post)")]]
 newstopics = ["", "RES", "CMPNY", "MRG", "RESF"] #["", "RES"]
+newstopics = ["", "RES", "RESF"] #["", "RES"]
 
+# dfvars = (:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES),
+#             (:sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY), (:sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG), (:sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF))
 dfvars = (:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES),
-            (:sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY), (:sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG), (:sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF))
+            (:sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF))
 
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
 aggDicFreq = Dict()
-for freq in [Dates.day, Dates.quarterofyear, Dates.month, Dates.week]##Dates.quarterofyear,Dates.quarterofyear, Dates.month, Dates.week,
+for freq in [Dates.day]#, Dates.quarterofyear, Dates.month, Dates.week]##Dates.quarterofyear,Dates.quarterofyear, Dates.month, Dates.week,
     print(freq)
     if freq == Dates.day
         eventWindows = Dict([-1,0]=>dfvars,
@@ -95,10 +126,12 @@ for freq in [Dates.day, Dates.quarterofyear, Dates.month, Dates.week]##Dates.qua
                             [-3,-1]=>dfvars,
                             [-4,-1]=>dfvars,
                             [-5,-1]=>dfvars,
+                            [-10,-1]=>dfvars,
                             [-20,-1]=>dfvars,
                             [-60,-1]=>dfvars,
                             [-120,-1]=>dfvars,
                             [-250,-1]=>dfvars,
+                            [0,1]=>dfvars,
                             [1,2]=>dfvars,
                             [1,3]=>dfvars,
                             [1,4]=>dfvars,
@@ -136,7 +169,7 @@ for freq in [Dates.day, Dates.quarterofyear, Dates.month, Dates.week]##Dates.qua
         print(Dates.format(now(), "HH:MM"))
         aggDicFreq[ptf] = aggDF
     end
-    @time JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/quintilenew_$(freq)_$(tdperiods).jld2" aggDicFreq
+    @time JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/allobs_$(freq)_$(tdperiods).jld2" aggDicFreq
 end
 
 
