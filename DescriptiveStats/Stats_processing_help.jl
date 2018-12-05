@@ -1,4 +1,4 @@
-using DataFrames, RCall, DataFramesMeta, RollingFunctions
+using DataFrames, RCall, DataFramesMeta, RollingFunctions, ShiftedArrays
 
 function rename_event(symb,topics=["RES"])
     substrings = split(String(symb) ,r"[\[\]()]")
@@ -703,7 +703,7 @@ function computesurprises(ptfDF, vars, windows)
         end
         DataFrame(res)
     end
-    return res
+    return a
 end
 
 
@@ -725,7 +725,44 @@ function marketSurprises(ptfDF, LTspecs, STspecs, ws)
         LTwVec[end-STwindow+1:end] .= 0
         LTnews = running(custom_mean, convert(Array{Union{Float64,Missing}}, prov[Symbol("$(ws)_$(LTvar)")]), LTwindow, LTwVec)
         STnews = running(custom_mean, convert(Array{Union{Float64,Missing}}, prov[Symbol("$(ws)_$(STvar)")]), STwindow)
-        mktsurprises[Symbol("LT$(LTwindow)_ST$(STwindow)")] = replace(LTnews .- STnews, NaN=>missing)
+        mktsurprises[Symbol("LT$(LTwindow)|$(LTvar)_ST$(STwindow)|$(STvar)")] = replace(LTnews .- STnews, NaN=>missing)
     end
     return mktsurprises
+end
+
+
+
+
+function lagbypermno(ptfDF, lagvars, lagspans)
+    print("Did you sort the DF by [:permno, :perid] ???")
+    @time a = by(ptfDF, :permno) do df
+        res = Dict()
+        for var in lagvars
+            for span in lagspans
+                res[Symbol("$(var)_l$(span)")] = lag(df[var], span)
+            end
+        end
+        DataFrame(res)
+    end
+    return hcat(ptfDF, a)
+end
+
+
+function mktretbypermno(ptfDF, lagvars, lagspans, type = "lead")
+    print("Did you sort the DF by [:permno, :perid] ???")
+    @time a = by(ptfDF, :permno) do df
+        res = Dict()
+        for var in lagvars
+            for span in lagspans
+                a = running(cumret, df[var], span)
+                if type == "lead"
+                    res[Symbol("$(var)_$(type)$(span)")] = lead(a, span)
+                elseif type == "lag"
+                    res[Symbol("$(var)_$(type)$(span)")] = lead(a, span)
+                end
+            end
+        end
+        DataFrame(res)
+    end
+    return hcat(ptfDF, a)
 end

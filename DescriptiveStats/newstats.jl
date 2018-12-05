@@ -14,6 +14,11 @@ HMLDic = deepcopy(aggDicFreq)
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 quintileids = [x*10+y for x in 1:5 for y in 1:5]
 
+baker = CSV.read("/run/media/nicolas/Research/Data/baker_sentiment.csv")
+a = baker[:SENT]
+@rput a
+R"plot(a)"
+
 
 for i in names(keepgoodcolumns(aggDicFreq[55], ["", "RES", "CMPNY", "MRG", "RESF"]))
     print("$i \n")
@@ -220,14 +225,15 @@ for doublesort in [0]#0:4
 end
 
 
+include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 
 ptfDF = @time keepgoodcolumns(copy(aggDicFreq[1]), ["", "RES", "RESF"])
 
 ####!!! I should group by ptf for the surprise series!!!
-####!!! Individual suprise should group by permno
+####!!! Individual suprise should group by permno -> done
 ####!!! I should have market return etc for the future controls!!!
-####!!! Lagged returns
-####!!! Compute the market surprise
+####!!! Lagged returns -> done
+####!!! Compute the market surprise -> done
 vars = [((:sum_perSent_, :sum_perNbStories_), (:sum_perSent_, :sum_perNbStories_)),
         ((:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES)),
         ((:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))]
@@ -236,13 +242,84 @@ excluderecent = true
 
 ptfDF[:perid] = Int.(ptfDF[:perid])
 
-oooo = @time computesurprises(ptfDF, vars, windows)
+stockSurp = @time computesurprises(ptfDF, vars, windows)
 
 LTspecs = [(60, :aggSent_), (60, :aggSent_RESF), (20, :aggSent_), (20, :aggSent_RESF),
             (60, :aggSent_), (60, :aggSent_RESF), (20, :aggSent_), (20, :aggSent_RESF)]
 STspecs = [(5, :aggSent_RES), (5, :aggSent_RES), (5, :aggSent_RES), (5, :aggSent_RES),
             (2, :aggSent_RES), (2, :aggSent_RES), (2, :aggSent_RES), (2, :aggSent_RES)]
-bbbb = @time marketSurprises(ptfDF, LTspecs, STspecs, "VW")
+mktSurp = @time marketSurprises(ptfDF, LTspecs, STspecs, "VW")
+
+chosenvars = [:sum_perSent_, :sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES]
+HMLsuprs = HMLspreads(HMLDic, chosenvars, "VW", true)
+FFfactors = CSV.read("/run/media/nicolas/Research/FF/dailyFactors.csv")[1:3776,:]
+todate = x -> Date(string(x),"yyyymmdd")
+dates = todate.(FFfactors[:Date])
+ymonth = Dates.yearmonth.(dates)
+months = Dates.month.(dates)
+weekdays = Dates.dayname.(dates)
+ys = Dates.year.(dates)
+wmy = []
+for (i,j,k) in zip(Dates.week.(dates), ys,months)
+    push!(wmy, "$i $j $k")
+end
+qy = []
+for (i,j) in zip(Dates.quarterofyear.(dates), ys)
+    push!(qy, "$i $j")
+end
+
+
+chosenvars = [:aggSent_]
+w_vars = [Symbol("w_$(x)") for x in chosenvars]
+mktsent = EW_VW_series(ptfDF, w_vars, chosenvars)
+
+dailyseries = hcat(DataFrame(Dict("date"=>dates)), DataFrame(mktSurp), DataFrame(HMLsuprs), mktsent)
+a = by(dailyseries, :date) do df
+    res = Dict()
+    # for i in names(dailyseries)[2:end]
+    #     res[i] = cumret(df[i])
+    # end
+    res[:x1] = custom_sum(df[:HML_VW_sum_perSent_]) ./ custom_sum(df[:HML_VW_sum_perNbStories_])
+    DataFrame(res)
+end
+
+for i in names(a)[2:end]
+    print("std $i : $(NaNMath.std(collect(skipmissing(a[i])))) \n")
+    print("mean $i : $(NaNMath.mean(collect(skipmissing(a[i])))) \n")
+end
+
+comparets = hcat(baker, a[1:155,:])
+CSV.write("/run/media/nicolas/Research/SummaryStats/tscompare.csv", comparets)
+@rput comparets
+
+b = hcat(ys, dailyseries)
+eee = by(b, :x1) do df
+    res = Dict()
+    res[:avg] = custom_mean(df[:EW_aggSent_])
+end
+
+x = []
+for i in 2003:2017
+    jan = b[b[:x1].==2010,:]
+    fev = b[b[:x1].==i,:]
+    jan = jan[:surpHML_ALL_RES_60_5]; fev = fev[:surpHML_ALL_RES_60_5]
+    push!(x, Rttest(jan, fev))
+end
+
+prov = hcat(prov, eee, x)
+CSV.write("/run/media/nicolas/Research/SummaryStats/yearlycompare.csv", prov)
+
+a = dailyseries[:EW_aggSent_]
+@rput a; R"plot(a)"
+
+
+ptfDF = @time concat_groupInvariant_vars(ptfDF, DataFrame(mktSurp), size(ptfDF, 2))
+
+# plot the time series
+# a = bbbb[Symbol("LT20|aggSent_RESF_ST2|aggSent_RES")]
+# @rput a
+# R"plot(a, type='l')"
+# custom_mean(a)
 
 @time ptfDF[:surp_RESF_RES_60_5] = surpriseSeriesDF(ptfDF, 60, 5, (:sum_perSent_RESF, :sum_perNbStories_RESF), (:sum_perSent_RES, :sum_perNbStories_RES))
 ptfDF[:surp_ALL_RES_60_5] = surpriseSeriesDF(ptfDF, 60, 5, (:sum_perSent_, :sum_perNbStories_), (:sum_perSent_RES, :sum_perNbStories_RES))
@@ -278,7 +355,7 @@ R"res = summary(mod)"
 @time R"res = summary(mod2)"
 
 
-for i in names(ptfDF)
+for i in names(a)
     print("$i\n")
 end
 
@@ -286,11 +363,53 @@ end
 
 
 
+paneldf = hcat(paneldf, ptfDF[[Symbol("LT60|aggSent_RESF_ST5|aggSent_RES"), Symbol("LT60|aggSent__ST5|aggSent_RES")]],
+                stockSurp[[names(stockSurp)[9], names(stockSurp)[13]]])
+@time sort!(paneldf, [:permno, :perid])
+paneldf = @time lagbypermno(paneldf, [:cumret], 1:5)
+paneldf = @time mktretbypermno(paneldf,[:Mkt_RF, :SMB, :HML, :Mom], [5], "lead")
+extras = [[names(stockSurp)[9], names(stockSurp)[13]]; [Symbol("LT60|aggSent_RESF_ST5|aggSent_RES"), Symbol("LT60|aggSent__ST5|aggSent_RES")] ; [Symbol("cumret_l$(x)") for x in 1:5] ; [:HML_lead5, :Mkt_RF_lead5, :Mom_lead5, :SMB_lead5]]
+a=paneldf[[[:permno, :perid, :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom] ; cptfvars ; hmlsurprisevars; extras]]
+names!(a, [[:permno, :perid, :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom] ; cptfvars ; hmlsurprisevars; [:S_all60_RES5, :S_RESF60_RES5, :Smkt_RESF60_RES5, :Smkt_all60_RES5]; [Symbol("cumret_l$(x)") for x in 1:5] ; [:HML_lead5, :Mkt_RF_lead5, :Mom_lead5, :SMB_lead5]])
+a[:invertmom] = replace(abs.(a[:momrank] .- 11), missing=>5)
+a[:aggSent_] = ptfDF[:aggSent_]
+a[:ret__1_5] = ptfDF[:ret__1_5]
+a[:ret__1_20] = ptfDF[:ret__1_20]
+a[:ret__0_1] = ptfDF[:ret__0_1]
+a[:anomsum] = a[:invertmom] .+ a[:bmdecile] .+ a[:sizedecile]
+@time @rput a
+R"library(plm)"
+R"library(stargazer)"
+@time R"E <- pdata.frame(a, index=c('permno', 'perid'))";
+@time R"mod4 <- plm(ret__1_5 ~ S_all60_RES5*bmdecile + S_all60_RES5:ND + Smkt_all60_RES5*bmdecile*ND + surpHML_ALL_RES_60_5*bmdecile*ND + Mkt_RF_lead5 + SMB_lead5 + HML_lead5 + Mom_lead5 + cumret_l1 + cumret_l2 + cumret_l3 + cumret_l4 + cumret_l5, data = E, model = 'within')";
+@time R"res4 = summary(mod4)"
+R"print(res4)";
+R"stargazer(mod4, mod5, mod6, mod7, mod8)"
 
 
+@time R"mod5 <- plm(ret__1_5 ~ surpHML_ALL_RES_60_5*bmdecile*ND + Mkt_RF_lead5 + SMB_lead5 + HML_lead5 + Mom_lead5 + cumret_l1 + cumret_l2 + cumret_l3 + cumret_l4 + cumret_l5, data = E, model = 'within')";
+@time R"res5 = summary(mod5)"
+R"print(res5)";
+
+@time R"mod6 <- plm(ret__1_5 ~ S_all60_RES5*bmdecile + S_all60_RES5:ND + Smkt_all60_RES5*bmdecile*ND + Mkt_RF_lead5 + SMB_lead5 + HML_lead5 + Mom_lead5, data = E, model = 'within')";
+@time R"res6 = summary(mod6)"
+R"print(res6)";
+
+@time R"mod7 <- plm(ret__1_5 ~ S_all60_RES5*bmdecile + S_all60_RES5 + Smkt_all60_RES5*bmdecile*ND*EAD + surpHML_ALL_RES_60_5*bmdecile*ND*EAD + Mkt_RF_lead5 + SMB_lead5 + HML_lead5 + Mom_lead5, data = E, model = 'within')";
+@time R"res7 = summary(mod7)"
+R"print(res7)";
 
 
+@time R"mod8 <- plm(cumret ~ S_all60_RES5*bmdecile + S_all60_RES5:ND + Smkt_all60_RES5*bmdecile*ND + surpHML_ALL_RES_60_5*bmdecile*ND + Mkt_RF + SMB + HML + Mom + cumret_l1 + cumret_l2 + cumret_l3 + cumret_l4 + cumret_l5, data = E, model = 'within')";
+@time R"res8 = summary(mod8)"
+R"print(res8)";
 
+@time R"mod9 <- plm(ret__1_5 ~ S_all60_RES5*bmdecile + S_all60_RES5 + Smkt_all60_RES5*bmdecile*ND*EAD + surpHML_ALL_RES_60_5*bmdecile*ND*EAD, data = E, model = 'within')";
+@time R"res9 = summary(mod9)"
+R"print(res9)";
+
+
+std(a[:surpHML_ALL_RES_60_5])
 
 
 

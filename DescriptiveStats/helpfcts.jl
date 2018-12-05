@@ -1,6 +1,15 @@
 using RCall, Statistics, StatsBase, TimeZones, Dates, RollingFunctions, DataFramesMeta
 include("/home/nicolas/github/News-Analytics/Denada_DB/WRDS/WRDSdownload.jl")
 
+
+function isnotmissing(x)
+    return !ismissing(x)
+end
+
+function notIn(notin, onlyin)
+    return filter(x -> x ∉ notin, onlyin)
+end
+
 function sent_ret_series(sentMat, wMat, retMat, nbstoriesMat, ignoremissing=false)
     wMat = convert(Array, wMat)
     retMat = convert(Array, retMat)
@@ -462,7 +471,7 @@ function queryDB_singlefilt(filtvar, tdperiods, chosenVars, cRange, mongo_collec
     periodspan = Dict("\$gte"=>tdperiods[1], "\$lte"=>tdperiods[2])
     myfilter = Dict("\$gte"=>cRange[1], "\$lte"=>cRange[2])
 
-    # Get all the unique trading days
+    # Get all the unique trading d"dailywt", "dailyretadj"ays
     uniqueTd = mongo_collection[:find](Dict("td"=>periodspan))[:distinct]("td")
     # Get all unique stock identifiers (permno) during the period
     uniquePermno = mongo_collection[:find](Dict("td"=>periodspan,
@@ -477,6 +486,40 @@ function queryDB_singlefilt(filtvar, tdperiods, chosenVars, cRange, mongo_collec
     for td in tdperiods[1]:tdperiods[2]
         for filtDic in mongo_collection[:find](Dict("td"=>td,
                                                     filtvar=>myfilter),
+                                               # Return only the variables we care about + the permno
+                                               Dict(zip([chosenVars;"permno"], repeat([1],length(chosenVars)+1))))
+            crtpermno = Int64(filtDic["permno"])
+            for var in filtDic
+                if !(var[1] in ["permno", "_id"])
+                    if typeof(var[2]) in [Float64, Int64]
+                        dfDict[var[1]][Symbol(crtpermno)][td] = Float64(var[2])
+                    end
+                end #if one of the desired variables
+            end
+        end
+    end
+    return dfDict
+end
+
+
+function queryDB_NOfilt(tdperiods, chosenVars, mongo_collection)
+    #query filters for MongoDB
+    periodspan = Dict("\$gte"=>tdperiods[1], "\$lte"=>tdperiods[2])
+    myfilter = Dict("\$gte"=>cRange[1], "\$lte"=>cRange[2])
+
+    # Get all the unique trading days
+    uniqueTd = mongo_collection[:find](Dict("td"=>periodspan))[:distinct]("td")
+    # Get all unique stock identifiers (permno) during the period
+    uniquePermno = mongo_collection[:find](Dict("td"=>periodspan))[:distinct]("permno")
+
+    #Create dataframes
+    dfDict = Dict{String, DataFrame}()
+    for queryVar in chosenVars
+        dfDict[queryVar] = initDF(Int64.(uniquePermno), length(uniqueTd))
+    end
+
+    for td in tdperiods[1]:tdperiods[2]
+        for filtDic in mongo_collection[:find](Dict("td"=>td),
                                                # Return only the variables we care about + the permno
                                                Dict(zip([chosenVars;"permno"], repeat([1],length(chosenVars)+1))))
             crtpermno = Int64(filtDic["permno"])
@@ -1220,6 +1263,58 @@ function rollingdiff(X, d)
     res = Float64[]
     for i in 1:(length(X)-d)
         push!(res, X[i+d]-X[i])
+    end
+    return res
+end
+
+
+
+
+
+"""
+This function takes an array of array (X) where each individual array (x) is of
+same length. It concatenates all elements at a position together into a string.
+"""
+function concatToString(X)
+    res = String[]
+    for i in 1:length(X[1])
+        id = ""
+        for x in X
+            id = "$(x[i])_$(id)"
+        end
+        push!(res, id)
+    end
+    return res
+end
+
+
+
+function freqIdentifiers()
+    FFfactors = CSV.read("/run/media/nicolas/Research/FF/dailyFactors.csv")[1:3776,:]
+    todate = x -> Date(string(x),"yyyymmdd")
+    dates = todate.(FFfactors[:Date])
+    ymonth = Dates.yearmonth.(dates)
+    months = Dates.month.(dates)
+    weekdays = Dates.dayname.(dates)
+    weeknumber = Dates.week.(dates)
+    biweeknumber = weekToBiweekMap(weeknumber)
+    ys = Dates.year.(dates)
+    quarternumber = Dates.quarterofyear.(dates)
+    year_week = concatToString([ys, weeknumber])
+    year_month = concatToString([ys, months])
+    year_quarter = concatToString([ys, quarternumber])
+    year_biweek = concatToString([ys, biweeknumber])
+    return Dict("year"=>ys, "quarter"=>year_quarter, "month"=>year_month, "biweek"=>year_biweek, "week"=>year_week)
+end
+
+function weekToBiweekMap(weeknumber)
+    res = Int[]
+    for i in weeknumber
+        if i%2==1
+            push!(res, ceil(i/2))
+        else
+            push!(res, i/2)
+        end
     end
     return res
 end

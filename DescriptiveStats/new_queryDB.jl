@@ -7,10 +7,13 @@
 #               "nbStories_rel100_nov24H_CMPNY", "sent_rel100_nov24H_CMPNY",
 #               "nbStories_rel100_nov24H_MRG", "sent_rel100_nov24H_MRG",
 #               "nbStories_rel100_nov24H_RESF", "sent_rel100_nov24H_RESF"]
+# chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_nov24H",
+#               "EAD", "nbStories_rel100_nov24H_RES", "sent_rel100_nov24H_RES", "vol", "roa",
+#               "momrank", "bmdecile", "sizedecile",
+#               "nbStories_rel100_nov24H_RESF", "sent_rel100_nov24H_RESF"]
 chosenVars = ["dailywt", "dailyretadj", "nbStories_rel100_nov24H", "sent_rel100_nov24H",
               "EAD", "nbStories_rel100_nov24H_RES", "sent_rel100_nov24H_RES", "vol", "roa",
-              "momrank", "bmdecile", "sizedecile",
-              "nbStories_rel100_nov24H_RESF", "sent_rel100_nov24H_RESF"]
+              "momrank", "bmdecile", "sizedecile", "gsector"]
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
 tdperiods = (1,3776) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
@@ -95,13 +98,13 @@ operationsDic = Dict()
 #                             [:sent_rel100_nov24H, :nbStories_rel100_nov24H, :sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES,
 #                             :sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY, :sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG, :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
 operationsDic["sums"] = [custom_sum_missing,
-                            [:sum_perSent_, :sum_perNbStories_, :sum_perSent_RES, :sum_perNbStories_RES,
-                            :sum_perSent_RESF, :sum_perNbStories_RESF],
-                            [:sent_rel100_nov24H, :nbStories_rel100_nov24H, :sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES,
-                            :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
+                            [:sum_perSent_, :sum_perNbStories_, :sum_perSent_RES, :sum_perNbStories_RES],
+                            # :sum_perSent_RESF, :sum_perNbStories_RESF],
+                            [:sent_rel100_nov24H, :nbStories_rel100_nov24H, :sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES]]#,
+                            # :sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF]]
 operationsDic["lastels"] = [getlast,
-                            [:permno, :wt, :perid, :roa, :vol, :momrank, :bmdecile, :sizedecile],
-                            [:permno, :dailywt, :perid,  :roa, :vol, :momrank, :bmdecile, :sizedecile]]
+                            [:permno, :wt, :perid, :roa, :vol, :momrank, :bmdecile, :sizedecile, :gsector],
+                            [:permno, :dailywt, :perid,  :roa, :vol, :momrank, :bmdecile, :sizedecile, :gsector]]
 operationsDic["cumrets"] = [cumret,
                             [:cumret],
                             [:dailyretadj]]
@@ -110,6 +113,7 @@ operationsDic["maxs"] = [custom_max,
                             [:EAD, Symbol("aroundEAD$(around_EAD)"), Symbol("aroundEAD$(around_EAD_prev)"), Symbol("aroundEAD$(around_EAD_post)")]]
 newstopics = ["", "RES", "CMPNY", "MRG", "RESF"] #["", "RES"]
 newstopics = ["", "RES", "RESF"] #["", "RES"]
+newstopics = ["", "RES"]
 
 # dfvars = (:dailyretadj, (:sent_rel100_nov24H, :nbStories_rel100_nov24H), (:sent_rel100_nov24H_RES, :nbStories_rel100_nov24H_RES),
 #             (:sent_rel100_nov24H_CMPNY, :nbStories_rel100_nov24H_CMPNY), (:sent_rel100_nov24H_MRG, :nbStories_rel100_nov24H_MRG), (:sent_rel100_nov24H_RESF, :nbStories_rel100_nov24H_RESF))
@@ -164,12 +168,12 @@ for freq in [Dates.day]#, Dates.quarterofyear, Dates.month, Dates.week]##Dates.q
         print(Dates.format(now(), "HH:MM"))
         @time aggDF = aggperiod(quintileDFs[ptf], operationsDic, newstopics, freq, tdperiods[1], tdperiods[2])
 
-        @time aggDF = addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
+        # @time aggDF = addEvents(aggDF, freq, tdperiods, eventWindows, ptf)
 
         print(Dates.format(now(), "HH:MM"))
         aggDicFreq[ptf] = aggDF
     end
-    @time JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/allobs_$(freq)_$(tdperiods).jld2" aggDicFreq
+    @time JLD2.@save "/run/media/nicolas/Research/SummaryStats/agg/sectorsimple_allobs_$(freq)_$(tdperiods).jld2" aggDicFreq
 end
 
 
