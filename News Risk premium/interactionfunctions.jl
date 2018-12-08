@@ -18,8 +18,14 @@ function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOv
                 push!(crtptfcomposition[ptf], permno)
             end
         end
-        print("keys 1:$(length(crtptfcomposition[1]))")
-        print("keys in assgnmentdict: $(length(keys(assignmentDict)))")
+        print(" crt top stocks: $(crtptfcomposition[10]) \n")
+
+        totstocks = 0
+        for (ptf, stocks) in crtptfcomposition
+            print("$ptf : $(length(stocks)) \n")
+            totstocks+=length(stocks)
+        end
+        print("start totstocks: $totstocks \n")
 
         allptfs = ptf_TS(nbBuckets, data, :provptf, focusonNewsdaysonly = true)
 
@@ -37,19 +43,35 @@ function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOv
         permnoranksovertime = assignranktopermno(smalltohighinteractionptf, permnoranksovertime, crtptfcomposition)
 
         crtAVGrankings = bestrankingstocks(permnoranksovertime, nbBuckets)
-        print(keys(crtAVGrankings))
 
         resptfranks, stocksToShuffle = keepXpercOfArrays(crtAVGrankings, shufflerate)
+
+        totstocks = 0
+        for (ptf, stocks) in resptfranks
+            print("$ptf : $(length(stocks)) \n")
+            totstocks+=length(stocks)
+        end
+        print("Intermed totstocks: $totstocks \n")
+        print("Stocks to shuffle $(length(stocksToShuffle)) \n")
+
         stocksToShuffle = stocksToShuffle[randperm(length(stocksToShuffle))]
 
         crtptfcomposition = pushmixedstocks(resptfranks, stocksToShuffle)
-        print("keys 2:$(length(crtptfcomposition[1]))")
-        print("keys 3:$(length(resptfranks[1]))")
+
+        totstocks = 0
+        for (ptf, stocks) in crtptfcomposition
+            print("$ptf : $(length(stocks)) \n")
+            totstocks+=length(stocks)
+        end
+        print("totstocks: $totstocks \n")
+
         assignmentDict = crtCompositiontoAssignment(crtptfcomposition)
 
         for row in 1:size(data,1)
             data[row, :provptf] = assignmentDict[Int(data[row,:permno])]
         end
+
+
 
     end
     return permnoranksovertime, R2FitnessOverTime, interactionFitnessOverTime
@@ -167,9 +189,15 @@ function regptfspill(allptfs, nbBuckets, newsShockVar, WS ; control = :rawnewsst
         @rget res; @rget res1;
         push!(regres["R2_1"], res[:adj_r_squared])
         push!(regres["R2_2"], res1[:adj_r_squared])
-        push!(regres["ret_tstat"], res[:coefficients][2,3])
-        push!(regres["ret_tstat_simple"], res1[:coefficients][2,3])
-        push!(regres["interaction_tstat"], res[:coefficients][4,3])
+        try
+            push!(regres["ret_tstat"], res[:coefficients][2,3])
+            push!(regres["ret_tstat_simple"], res1[:coefficients][2,3])
+            push!(regres["interaction_tstat"], res[:coefficients][4,3])
+        catch
+            print(byday[:VWret_lom])
+            print(byday[:VWret_v])
+            error(res[:coefficients])
+        end
     end
     return regres
 end
@@ -193,26 +221,23 @@ function bestrankingstocks(permnoranksovertime, nbBuckets)
     allAVGranks = Float64[]
     stockranks = Dict()
     splitsAVGranks = percentile(percpermnoranksovertime(permnoranksovertime), collect(100/nbBuckets:100/nbBuckets:100))
-    print(splitsAVGranks)
     for (permno, ranks) in permnoranksovertime
         #Ther is a problem: I want the same numner of ranks every period
-        push!(allAVGranks, mean(ranks)+rand(-1:0.0000000001:1)/10000000000)
+        minideviation = rand(-1:0.0000000001:0)/10000000000
+        push!(allAVGranks, mean(ranks)+minideviation)
         stockranks[permno] = assignToBucket(mean(ranks), splitsAVGranks)
     end
-    print("stockranklength $(length(keys(stockranks)))")
 
     splits = percentile(allAVGranks,collect(100/nbBuckets:100/nbBuckets:100))
-    print(splits)
-    print(allAVGranks)
+
     crtbestrankers = Dict()
     for i in 1:length(splits)
         crtbestrankers[i] = []
     end
     for (permno, meanrank) in stockranks
-        crtThresh = assignToBucket(minimum([meanrank+rand(-1:0.0000000001:1)/10000000000, maximum(splits)]), splits)
+        crtThresh = assignToBucket(minimum([meanrank, maximum(splits)]), splits)
         push!(crtbestrankers[crtThresh], permno)
     end
-    print("lefover stockranklength: $(length(keys(stockranks))) \n")
 
     return crtbestrankers
 end
@@ -221,9 +246,10 @@ end
 
 function keepXpercOfArrays(crtAVGrankings, keepPerc)
     # Cut the arrays to keep x% and create a pool with all the non-selected ones
+    keepPerc = 1-keepPerc
     stocksToShuffle = []
     for (rank, StockArray) in crtAVGrankings
-        idkeep = Int(ceil(length(StockArray)*keepPerc))
+        idkeep = Int(round(length(StockArray)*keepPerc))
         StockArray = StockArray[randperm(length(StockArray))]
         crtAVGrankings[rank] = StockArray[1:idkeep]
         append!(stocksToShuffle, StockArray[(idkeep+1):end])
@@ -234,15 +260,15 @@ end
 
 
 function pushmixedstocks(resptfranks, stocksToShuffle)
+    piecesofstockstoshuffle = partition_array_indices(length(stocksToShuffle), Int(round(length(stocksToShuffle)/length(keys(resptfranks)))) )
+    print("\n i0: $(length(piecesofstockstoshuffle))  -  $(length(keys(resptfranks))) \n")
+    i = 0
     for (rank, StockArray) in resptfranks
-        usid = length(StockArray)+1
-        if usid<length(stocksToShuffle)
-            append!(resptfranks[rank], stocksToShuffle[1:length(StockArray)])
-            stocksToShuffle = stocksToShuffle[usid:end]
-        else
-            append!(resptfranks[rank], stocksToShuffle)
-        end
+        i+=1
+        crtstockstoadd = stocksToShuffle[piecesofstockstoshuffle[i]]
+        append!(resptfranks[rank], crtstockstoadd)
     end
+    print("\n i: $i  -  $(length(keys(resptfranks))) \n")
     return resptfranks
 end
 
