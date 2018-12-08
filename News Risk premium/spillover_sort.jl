@@ -1,4 +1,4 @@
-using JLD2
+using JLD2, CSV
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/News Risk premium/premium_help.jl")
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
@@ -11,21 +11,23 @@ sort!(data, [:permno, :perid])
 data[:gsector] = replace(data[:gsector], missing=>0)
 data[:EAD] = replace(data[:EAD], missing=>0)
 
-nomicro = data[data[:sizedecile].>5,:]
+@time nomicro = data[data[:sizedecile].>2,:]
 
-sect1 = nomicro[nomicro[:gsector].==45,:]
-sect2 = nomicro[nomicro[:gsector].==55,:]
+@time ptfperf = nomicro[nomicro[:gsector].==35,:]
 
-freqIds = freqIdentifiers()
 
-stockrankings = classifyconditionalsensitivity(sect2, freq)
+allstocks = sensrankedptfs(data, freq)
 
-data[:periodclassifier] = string(0)
-for i in 1:length(data[:periodclassifier])
-    data[:periodclassifier][i] = string(freqIds[freq][Int(data[:perid][i])])
+
+
+meanvec = Float64[]
+for i in 1:10
+    push!(meanvec, mean(allstocks[i]))
 end
-data[:NS_rank_crt] = 0
-data[:NS_rank_fwd] = 0
+Rplot(meanvec)
+Rplot(ret2tick(allstocks[10] .- allstocks[1]))
+
+
 
 
 @time for row in 1:size(data,1)
