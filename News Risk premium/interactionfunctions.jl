@@ -1,4 +1,6 @@
-function siminteractionptfs(nbSim, R2FitnessOverTime, interactionFitnessOverTime, permnoranksovertime, permnolist, split_ranges, nbBuckets;  interactionvar = :rawnewsstrength_v, WS = "VW", control = :rawnewsstrength_lom, relcoveragetype = 1)
+function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOverTime, permnoranksovertime, permnolist, split_ranges, nbBuckets;  interactionvar = :rawnewsstrength_v, WS = "VW", control = :rawnewsstrength_lom, relcoveragetype = 1)
+    crtptfcomposition = Dict()
+    assignmentDict = Dict()
     for sim in 1:nbSim
 
         print("$(Dates.format(now(), "HH:MM:SS")) - $sim \n")
@@ -16,6 +18,8 @@ function siminteractionptfs(nbSim, R2FitnessOverTime, interactionFitnessOverTime
                 push!(crtptfcomposition[ptf], permno)
             end
         end
+        print("keys 1:$(length(crtptfcomposition[1]))")
+        print("keys in assgnmentdict: $(length(keys(assignmentDict)))")
 
         allptfs = ptf_TS(nbBuckets, data, :provptf, focusonNewsdaysonly = true)
 
@@ -33,12 +37,19 @@ function siminteractionptfs(nbSim, R2FitnessOverTime, interactionFitnessOverTime
         permnoranksovertime = assignranktopermno(smalltohighinteractionptf, permnoranksovertime, crtptfcomposition)
 
         crtAVGrankings = bestrankingstocks(permnoranksovertime, nbBuckets)
+        print(keys(crtAVGrankings))
 
         resptfranks, stocksToShuffle = keepXpercOfArrays(crtAVGrankings, shufflerate)
         stocksToShuffle = stocksToShuffle[randperm(length(stocksToShuffle))]
 
         crtptfcomposition = pushmixedstocks(resptfranks, stocksToShuffle)
+        print("keys 2:$(length(crtptfcomposition[1]))")
+        print("keys 3:$(length(resptfranks[1]))")
         assignmentDict = crtCompositiontoAssignment(crtptfcomposition)
+
+        for row in 1:size(data,1)
+            data[row, :provptf] = assignmentDict[Int(data[row,:permno])]
+        end
 
     end
     return permnoranksovertime, R2FitnessOverTime, interactionFitnessOverTime
@@ -181,26 +192,27 @@ end
 function bestrankingstocks(permnoranksovertime, nbBuckets)
     allAVGranks = Float64[]
     stockranks = Dict()
+    splitsAVGranks = percentile(percpermnoranksovertime(permnoranksovertime), collect(100/nbBuckets:100/nbBuckets:100))
+    print(splitsAVGranks)
     for (permno, ranks) in permnoranksovertime
-        push!(allAVGranks, mean(ranks))
-        stockranks[permno] = mean(ranks)
+        #Ther is a problem: I want the same numner of ranks every period
+        push!(allAVGranks, mean(ranks)+rand(-1:0.0000000001:1)/10000000000)
+        stockranks[permno] = assignToBucket(mean(ranks), splitsAVGranks)
     end
+    print("stockranklength $(length(keys(stockranks)))")
 
-    splits = percentile(allAVGranks,collect(0.1:100/nbBuckets:100))
+    splits = percentile(allAVGranks,collect(100/nbBuckets:100/nbBuckets:100))
+    print(splits)
+    print(allAVGranks)
     crtbestrankers = Dict()
-    for crtThresh in splits
-        crtbestrankers[crtThresh] = []
-        stocksIcanRemove = []
-        for (permno, meanrank) in stockranks
-            if meanrank <= crtThresh
-                push!(stocksIcanRemove, permno)
-                push!(crtbestrankers[crtThresh], permno)
-            end
-        end
-        for i in stocksIcanRemove
-            delete!(stockranks, i)
-        end
+    for i in 1:length(splits)
+        crtbestrankers[i] = []
     end
+    for (permno, meanrank) in stockranks
+        crtThresh = assignToBucket(minimum([meanrank+rand(-1:0.0000000001:1)/10000000000, maximum(splits)]), splits)
+        push!(crtbestrankers[crtThresh], permno)
+    end
+    print("lefover stockranklength: $(length(keys(stockranks))) \n")
 
     return crtbestrankers
 end
@@ -254,4 +266,32 @@ function addcrtfitness(FitnessOverTime, rankerptf, crtfitness)
         push!(FitnessOverTime[i], crtfitness[r])
     end
     return FitnessOverTime
+end
+
+
+
+function percpermnoranksovertime(permnoranksovertime)
+    avgranksovertime = Float64[]
+    for (permno, ranksovertime) in permnoranksovertime
+        push!(avgranksovertime, mean(ranksovertime)+rand(-1:0.0000000001:1)/10000000000)
+    end
+    return avgranksovertime
+end
+
+
+"""
+Assume that the lowest value is the END of the first bucket and the highest value is
+the END of the last bucket
+"""
+function assignToBucket(val, splitranksA)
+    Res = 0
+    splitranks = copy(splitranksA)
+    pushfirst!(splitranks, -999999999)
+    for i in 2:length(splitranks)
+        if splitranks[i-1] < val <= splitranks[i]
+            Res = Int(i-1)
+            break
+        end
+    end
+    return Res
 end
