@@ -393,6 +393,17 @@ function Rplot(X, ret2tick=false)
     R"plot(X, type='l')"
 end
 
+function R2l_plot(X, Y, ret2tick=false)
+    @rput X; @rput Y
+    if ret2tick
+        R"ret2tick <- function(vec, startprice){return(Reduce(function(x,y) {x * exp(y)}, vec, init=startprice, accumulate=T))}"
+        R"X <- ret2tick(X, 100)"
+        R"Y <- ret2tick(Y, 100)"
+    end
+    R"plot(X, type='l', col=2)"
+    R"lines(Y, col=4)"
+end
+
 function RsimpleReg(X, Y)
     @rput X; @rput Y
     R"reg = lm(X~Y)"

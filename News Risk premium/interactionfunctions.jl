@@ -1,9 +1,12 @@
-function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOverTime, permnoranksovertime, permnolist, split_ranges, nbBuckets;  interactionvar = :rawnewsstrength_v, WS = "VW", control = :rawnewsstrength_lom, relcoveragetype = 1)
+function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interactionFitnessOverTime, permnoranksovertime, permnolist, split_ranges, nbBuckets;  interactionvar = :rawnewsstrength_v, WS = "VW", control = :rawnewsstrength_lom, relcoveragetype = 1)
     crtptfcomposition = Dict()
     assignmentDict = Dict()
+    dcr = shufflerate/nbSim
     for sim in 1:nbSim
 
-        print("$(Dates.format(now(), "HH:MM:SS")) - $sim \n")
+        shufflerate -= dcr
+
+        print("$(Dates.format(now(), "HH:MM:SS")) - Sim: $sim \n")
 
         if sim==1
             crtptfcomposition = Dict()
@@ -18,7 +21,6 @@ function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOv
                 push!(crtptfcomposition[ptf], permno)
             end
         end
-        print(" crt top stocks: $(crtptfcomposition[10]) \n")
 
         totstocks = 0
         for (ptf, stocks) in crtptfcomposition
@@ -39,10 +41,17 @@ function siminteractionptfs(data, nbSim, R2FitnessOverTime, interactionFitnessOv
         interactionFitnessOverTime = addcrtfitness(interactionFitnessOverTime, smalltohighinteractionptf, regres["interaction_tstat"])
 
         Rplot(interactionFitnessOverTime[nbBuckets] .- interactionFitnessOverTime[1])
+        # R2l_plot(convert(Array{Float64}, interactionFitnessOverTime[nbBuckets]), convert(Array{Float64}, interactionFitnessOverTime[1]))
 
         permnoranksovertime = assignranktopermno(smalltohighinteractionptf, permnoranksovertime, crtptfcomposition)
 
         crtAVGrankings = bestrankingstocks(permnoranksovertime, nbBuckets)
+        totstocks = 0
+        for (ptf, stocks) in crtAVGrankings
+            print("$ptf : $(length(stocks)) \n")
+            totstocks+=length(stocks)
+        end
+        print("crtAVGrankings totstocks: $totstocks \n")
 
         resptfranks, stocksToShuffle = keepXpercOfArrays(crtAVGrankings, shufflerate)
 
@@ -221,12 +230,15 @@ function bestrankingstocks(permnoranksovertime, nbBuckets)
     allAVGranks = Float64[]
     stockranks = Dict()
     splitsAVGranks = percentile(percpermnoranksovertime(permnoranksovertime), collect(100/nbBuckets:100/nbBuckets:100))
+    print(percpermnoranksovertime(permnoranksovertime))
     for (permno, ranks) in permnoranksovertime
         #Ther is a problem: I want the same numner of ranks every period
         minideviation = rand(-1:0.0000000001:0)/10000000000
         push!(allAVGranks, mean(ranks)+minideviation)
-        stockranks[permno] = assignToBucket(mean(ranks), splitsAVGranks)
+        stockranks[permno] = assignToBucket(mean(ranks)+minideviation, splitsAVGranks)
     end
+    @rput allAVGranks
+    R"hist(allAVGranks)"
 
     splits = percentile(allAVGranks,collect(100/nbBuckets:100/nbBuckets:100))
 
