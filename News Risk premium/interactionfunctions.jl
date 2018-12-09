@@ -4,7 +4,10 @@ function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interac
     dcr = shufflerate/nbSim
     for sim in 1:nbSim
 
-        shufflerate -= dcr
+        if sim != nbSim
+            shufflerate -= dcr
+        end
+
 
         print("$(Dates.format(now(), "HH:MM:SS")) - Sim: $sim \n")
 
@@ -21,13 +24,6 @@ function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interac
                 push!(crtptfcomposition[ptf], permno)
             end
         end
-
-        totstocks = 0
-        for (ptf, stocks) in crtptfcomposition
-            print("$ptf : $(length(stocks)) \n")
-            totstocks+=length(stocks)
-        end
-        print("start totstocks: $totstocks \n")
 
         allptfs = ptf_TS(nbBuckets, data, :provptf, focusonNewsdaysonly = true)
 
@@ -46,33 +42,12 @@ function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interac
         permnoranksovertime = assignranktopermno(smalltohighinteractionptf, permnoranksovertime, crtptfcomposition)
 
         crtAVGrankings = bestrankingstocks(permnoranksovertime, nbBuckets)
-        totstocks = 0
-        for (ptf, stocks) in crtAVGrankings
-            print("$ptf : $(length(stocks)) \n")
-            totstocks+=length(stocks)
-        end
-        print("crtAVGrankings totstocks: $totstocks \n")
 
         resptfranks, stocksToShuffle = keepXpercOfArrays(crtAVGrankings, shufflerate)
-
-        totstocks = 0
-        for (ptf, stocks) in resptfranks
-            print("$ptf : $(length(stocks)) \n")
-            totstocks+=length(stocks)
-        end
-        print("Intermed totstocks: $totstocks \n")
-        print("Stocks to shuffle $(length(stocksToShuffle)) \n")
 
         stocksToShuffle = stocksToShuffle[randperm(length(stocksToShuffle))]
 
         crtptfcomposition = pushmixedstocks(resptfranks, stocksToShuffle)
-
-        totstocks = 0
-        for (ptf, stocks) in crtptfcomposition
-            print("$ptf : $(length(stocks)) \n")
-            totstocks+=length(stocks)
-        end
-        print("totstocks: $totstocks \n")
 
         assignmentDict = crtCompositiontoAssignment(crtptfcomposition)
 
@@ -228,28 +203,13 @@ end
 
 function bestrankingstocks(permnoranksovertime, nbBuckets)
     allAVGranks = Float64[]
-    stockranks = Dict()
-    splitsAVGranks = percentile(percpermnoranksovertime(permnoranksovertime), collect(100/nbBuckets:100/nbBuckets:100))
-    print(percpermnoranksovertime(permnoranksovertime))
+    stockranks, crtbestrankers = splitEqualDicbyVal(permnoranksovertime, nbBuckets)
+
     for (permno, ranks) in permnoranksovertime
-        #Ther is a problem: I want the same numner of ranks every period
-        minideviation = rand(-1:0.0000000001:0)/10000000000
-        push!(allAVGranks, mean(ranks)+minideviation)
-        stockranks[permno] = assignToBucket(mean(ranks)+minideviation, splitsAVGranks)
+        push!(allAVGranks, mean(ranks))
     end
     @rput allAVGranks
-    R"hist(allAVGranks)"
-
-    splits = percentile(allAVGranks,collect(100/nbBuckets:100/nbBuckets:100))
-
-    crtbestrankers = Dict()
-    for i in 1:length(splits)
-        crtbestrankers[i] = []
-    end
-    for (permno, meanrank) in stockranks
-        crtThresh = assignToBucket(minimum([meanrank, maximum(splits)]), splits)
-        push!(crtbestrankers[crtThresh], permno)
-    end
+    # R"hist(allAVGranks)"
 
     return crtbestrankers
 end
@@ -311,7 +271,7 @@ end
 function percpermnoranksovertime(permnoranksovertime)
     avgranksovertime = Float64[]
     for (permno, ranksovertime) in permnoranksovertime
-        push!(avgranksovertime, mean(ranksovertime)+rand(-1:0.0000000001:1)/10000000000)
+        push!(avgranksovertime, mean(ranksovertime))
     end
     return avgranksovertime
 end
@@ -332,4 +292,30 @@ function assignToBucket(val, splitranksA)
         end
     end
     return Res
+end
+
+
+
+
+"""
+a: permnoranksovertime Dict
+"""
+function splitEqualDicbyVal(a, nbSplits)
+    stockranks = Dict()
+    crtbestrankers = Dict()
+    b = DataFrame(Dict("keys"=>collect(keys(a)), "vals"=>collect(mean.(values(a)))))
+    sort!(b, :vals)
+    sortedkeys = b[:keys]
+    splitranges = partition_array_indices(length(sortedkeys), Int(ceil(length(sortedkeys)/nbSplits)))
+    rank = 0
+    for ran in splitranges
+        rank+=1
+        crtbestrankers[rank] = []
+        crtdf = b[ran,:]
+        for row in 1:size(crtdf,1)
+            stockranks[crtdf[row,:keys]] = crtdf[row,:vals]
+            push!(crtbestrankers[rank], crtdf[row,:keys])
+        end
+    end
+    return stockranks, crtbestrankers
 end

@@ -5,13 +5,13 @@ include("$(laptop)/DescriptiveStats/helpfcts.jl")
 include("$(laptop)/News Risk premium/interactionfunctions.jl")
 @time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/sectorsimple_allobs_Dates.day_(1, 3776).jld2"
 
-nbSim, nbBuckets = 150, 5
+nbSim, nbBuckets = 50, 5
 shufflerate = 0.9
 data = aggDicFreq[1]
 sort!(data, [:permno, :perid])
 data[:rawnewsstrength] = abs.(data[:sum_perSent_])
 data[:rawnewsstrength] = replace(data[:rawnewsstrength], NaN=>0)
-data = data[data[:sizedecile].>9,:]
+data = data[data[:sizedecile].>8,:]
 data[:provptf] = 0
 permnolist = sort(collect(Set(data[:permno])))
 split_ranges = partition_array_indices(length(permnolist),Int(ceil(length(permnolist)/nbBuckets)))
