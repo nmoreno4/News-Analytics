@@ -25,12 +25,12 @@ for i in ["_$(x)" for x in topics]
     if i =="_"
         i=""
     end
+    i = "nonews"
     print("\n $i \n")
     print(Dates.format(now(), "HH:MM"))
-    chosenVars = ["nbStories_rel100_nov24H$(i)", "sent_rel100_nov24H$(i)","neg_rel100_nov24H$(i)", "pos_rel100_nov24H$(i)",
-                  "roa","gsector","dailywt", "dailyretadj", "bm", "me", "dailyvol", "EAD", "ebitda", "gp", "momrank", "rankbm", "ranksize", "tobinQ", "altmanZ", "at"]
-    @time res = queryDB_singlefilt_Dic("nbStories_rel100_nov24H$(i)", tdperiods, chosenVars, [-1,99999999], mongo_collection)
-    resdf = queryDic_to_df(res[1] , res[2])
+    chosenVars = ["roa","gsector","dailywt", "dailyretadj", "bm", "me", "dailyvol", "EAD", "ebitda", "gp", "momrank", "rankbm", "ranksize", "tobinQ", "altmanZ", "at"]
+    @time res = queryDB_singlefilt_Dic("permno", tdperiods, chosenVars, [-1,999999999], mongo_collection)
+    @time resdf = queryDic_to_df(res[1] , res[2])
     try
         delete!(resdf, :_id)
         [resdf[resdf[nm] .== nothing, nm] = NaN for nm in names(resdf)]

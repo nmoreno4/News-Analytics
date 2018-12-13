@@ -1,4 +1,4 @@
-using JLD2, DataFrames, Dates, CSV, StatsBase, GLM
+using JLD2, DataFrames, Dates, CSV, StatsBase
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
 
@@ -135,7 +135,7 @@ end
 
 for ptf in quintileids
     ptfDF = copy(aggDicFreq[ptf])
-    ptfDF[:aggSent_CMPNY] = ptfDF[:sum_perSent_CMPNY] ./ ptfDF[:sum_perNbStories_CMPNY]
+    ptfDF[:aggSent_CMPNY] = ptfDF[:sum_perSent_CMPNY]HMLDic ./ ptfDF[:sum_perNbStories_CMPNY]
     ptfDF[:aggSent_MRG] = ptfDF[:sum_perSent_MRG] ./ ptfDF[:sum_perNbStories_MRG]
     ptfDF[:aggSent_RESF] = ptfDF[:sum_perSent_RESF] ./ ptfDF[:sum_perNbStories_RESF]
     @time cdf_variable(ptfDF, [:aggSent_, :aggSent_RES, :aggSent_MRG, :aggSent_CMPNY, :aggSent_RESF], ptf)
@@ -144,7 +144,9 @@ end
 ptfDF = buckets_assign(ptfDF, :aggSent_, 10:10:100)
 
 
-
+for i in names(paneldf)
+    print("$i \n")
+end
 
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
 
@@ -161,20 +163,25 @@ for doublesort in [0]#0:4
         try
             print("\n \n \n \n THIS IS PTF: $ptf \n \n \n \n")
             resdic[ptf] = Dict()
-            ptfDF = @time keepgoodcolumns(copy(aggDicFreq[ptf]), ["", "RES", "CMPNY", "MRG", "RESF"])
-            ptfDF = @time createdoublesort(ptfDF, Symbol("aggSent__-5_-1"), Symbol("aggSent__-60_-1"))
-            ptfDF[:everyEAD] = 1
-            replace!(ptfDF[eadchoice], missing=>0)
+            ptfDF = @time keepgoodcolumns(copy(aggDicFreq[ptf]), ["", "RES", "RESF"])
+
+            stockSurp = @time computesurprises(ptfDF, vars, windows)
+            stockSurpcrt = @time copy(stockSurp[stockSurp[:bmdecile].==1,:])
+            stockSurpcrt = @time copy(stockSurpcrt[stockSurpcrt[:sizedecile].==1,:])
+
+            # If I want to create winner loser portfolios
+            # ptfDF = @time createdoublesort(ptfDF, Symbol("aggSent__-5_-1"), Symbol("aggSent__-60_-1"))
+            stockSurpcrt[:everyEAD] = 1
+            replace!(stockSurpcrt[eadchoice], missing=>0)
             if doublesort!=0
                 @time ptfDF = ptfDF[ptfDF[:doublefreqsort].==doublesort,:]
             end
             ptfDF = @time ptfDF[ptfDF[eadchoice].==1,:]
-            paneldf = @time createPanelDF(ptfDF, HMLDic, ptfvars = cptfvars, runninglags = [250,120,60,20,5], tdperiods = tdperiods);
+            paneldf = @time createPanelDFsurprise(ptfDF, HMLsuprs, mktSurp, ptfvars = cptfvars, runninglags = [250,120,60,20,5], tdperiods = tdperiods);
 
             namesWNOminus = [Symbol(replace(replace(String(x), "t_-"=>"t__-"), "-"=>"m")) for x in names(paneldf)]
             names!(paneldf, namesWNOminus)
 
-            # Regress current return against current HMLsent, stocksent and ptfsent
             a=paneldf[[:permno, :perid, cptfvarsNOMINUS[1], cptfvarsNOMINUS[2], Symbol("ptf_VW_$(cptfvarsNOMINUS[2])"), :HML_VW_aggSent_, :Mkt_RF, :SMB, :HML, :Mom]]
             reg = panelReg(a)
             resdic[ptf][1] = reg
@@ -210,12 +217,13 @@ for doublesort in [0]#0:4
             a=paneldf[[:permno, :perid, cptfvarsNOMINUS[3], cptfvarsNOMINUS[7], cptfvarsNOMINUS[8], cptfvarsNOMINUS[9], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), Symbol("ptf_VW_$(cptfvarsNOMINUS[8])"), Symbol("ptf_VW_$(cptfvarsNOMINUS[9])"), :HML_VW_aggSent__l5, :HML_VW_aggSent__l20, :HML_VW_aggSent__l60, :Mkt_RF, :SMB, :HML, :Mom]]
             reg = panelReg(a)
             resdic[ptf][9] = reg
+
         catch
             print("\n \n \n \n FAILED!!!! PTF: $ptf \n \n \n \n")
         end
     end
 
-    depvars = ["[1, 2, ptf2, HML]", "[5,7,ptf7,HML_l5]", "[1,7,ptf7,HML_l5]", "[3,7,ptf7,HML_l5]", "[14,8,ptf8,HML_l20]", "[5,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[3,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[14,8,ptf8,12,ptf12,HML_l20,HML_R_l20]", "[3,7,8,9,ptf7,ptf8,ptf9,HML5,HML20,HML60]"]
+    depvars = ["[1, 2, ptf2, HML]", "[5,7,ptf7,HML_l5]", "[1,7,ptf7,HML_l5]", "[3,7,ptf7,HML_l5]", "[14,8,ptf8,HML_l20]", "[5,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[3,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[14,8,ptf8,12,ptf12,HML_l20,HML_R_l20]", "[3,7,8,9,ptf7,ptf8,ptf9,HML5,HML20,HML60]", "weeklysimple"]
 
     for i in 1:length(depvars)
         for j in 1:7
@@ -223,6 +231,93 @@ for doublesort in [0]#0:4
         end
     end
 end
+
+resdicold = copy(resdic)
+resdic = Dict()
+for sz in 6:10
+    for bm in 6:10
+        ptf = [sz, bm]
+        print(ptf)
+        resdic[ptf] = Dict()
+        crtptfDF = hcat(ptfDF, stockSurp, makeunique=true)
+        stockSurpcrt = @time copy(crtptfDF[crtptfDF[:bmdecile].==bm,:])
+        stockSurpcrt = @time stockSurpcrt[stockSurpcrt[:sizedecile].==sz,:]
+        stockSurpcrt[:everyEAD] = 1
+        replace!(stockSurpcrt[eadchoice], missing=>0)
+        paneldf = @time createPanelDFsurprise(stockSurpcrt, HMLsuprs, mktSurp, ptfvars = cptfvars, runninglags = [250,120,60,20,5], tdperiods = tdperiods);
+
+        namesWNOminus = [Symbol(replace(replace(String(x), "t_-"=>"t__-"), "-"=>"m")) for x in names(paneldf)]
+        names!(paneldf, namesWNOminus)
+
+        # Regress current return against current HMLsent, stocksent and ptfsent
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[1], cptfvarsNOMINUS[2], Symbol("ptf_VW_$(cptfvarsNOMINUS[2])"), :surpHML_ALL_RES_60_5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][1] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[5], cptfvarsNOMINUS[7], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), :surpHML_ALL_RES_60_5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][2] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[1], cptfvarsNOMINUS[7], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), :surpHML_ALL_RES_60_5_l5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][3] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[3], cptfvarsNOMINUS[7], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), :surpHML_ALL_RES_60_5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][4] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[14], cptfvarsNOMINUS[8], Symbol("ptf_VW_$(cptfvarsNOMINUS[8])"), :surpHML_ALL_RES_60_5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][5] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[5], cptfvarsNOMINUS[7], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), cptfvarsNOMINUS[11], Symbol("ptf_VW_$(cptfvarsNOMINUS[11])"), :surpHML_ALL_RES_60_5, :HML_VW_aggSent_RES_l5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][6] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[3], cptfvarsNOMINUS[7], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), cptfvarsNOMINUS[11], Symbol("ptf_VW_$(cptfvarsNOMINUS[11])"), :surpHML_ALL_RES_60_5, :HML_VW_aggSent_RES_l5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][7] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[14], cptfvarsNOMINUS[8], Symbol("ptf_VW_$(cptfvarsNOMINUS[8])"), cptfvarsNOMINUS[12], Symbol("ptf_VW_$(cptfvarsNOMINUS[12])"), :surpHML_ALL_RES_60_5, :HML_VW_aggSent_RES_l20, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][8] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[3], cptfvarsNOMINUS[7], cptfvarsNOMINUS[8], cptfvarsNOMINUS[9], Symbol("ptf_VW_$(cptfvarsNOMINUS[7])"), Symbol("ptf_VW_$(cptfvarsNOMINUS[8])"), Symbol("ptf_VW_$(cptfvarsNOMINUS[9])"), :surpHML_ALL_RES_60_5, :surpHML_ALL_RES_20_5, :surpHML_ALL_RES_20_2, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][9] = reg
+
+        a=paneldf[[:permno, :perid, cptfvarsNOMINUS[3], :surpHML_ALL_RES_60_5, :HML_VW_aggSent_RES_l5, :Mkt_RF, :SMB, :HML, :Mom]]
+        reg = panelReg(a)
+        resdic[ptf][10] = reg
+    end
+end
+
+
+depvars = ["[1, 2, ptf2, HML]", "[5,7,ptf7,HML_l5]", "[1,7,ptf7,HML_l5]", "[3,7,ptf7,HML_l5]", "[14,8,ptf8,HML_l20]", "[5,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[3,7,ptf7,11,ptf11,HML_l5,HML_R_l5]", "[14,8,ptf8,12,ptf12,HML_l20,HML_R_l20]", "[3,7,8,9,ptf7,ptf8,ptf9,HML5,HML20,HML60]", "weeklysimple"]
+include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
+
+# for i in 1:length(depvars)
+#     for j in 1:7
+#         regToCsv(j, resdic, depvars[i], eadchoice, "no", i)
+#     end
+# end
+
+resdicfinal = merge(resdic, resdicold)
+for ds = 1:10
+    res = ones(10,10)
+    for sz in 1:10
+        for bm in 1:10
+            res[sz,bm] = resdicfinal[[sz,bm]][1][:coefficients][1,4]
+        end
+    end
+    CSV.write("/run/media/nicolas/Research/SummaryStats/MarieTables/regs/$(eadchoice)/type_$(ds).csv", DataFrame(res))
+end
+
+
+using JLD2
+JLD2.@save "/run/media/nicolas/Research/provresregdic.jld2" resdicfinal
+
+
 
 
 include("$(laptop)/DescriptiveStats/Stats_processing_help.jl")
@@ -273,7 +368,8 @@ chosenvars = [:aggSent_]
 w_vars = [Symbol("w_$(x)") for x in chosenvars]
 mktsent = EW_VW_series(ptfDF, w_vars, chosenvars)
 
-dailyseries = hcat(DataFrame(Dict("date"=>dates)), DataFrame(mktSurp), DataFrame(HMLsuprs), mktsent)
+dailyseries = hcat(DataFrame(Dict("date"=>dates)), DataFrame(mktSurp), DataFrame(HMLsuprs))
+
 a = by(dailyseries, :date) do df
     res = Dict()
     # for i in names(dailyseries)[2:end]

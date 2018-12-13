@@ -296,6 +296,41 @@ end
 
 
 
+function createPanelDFsurprise(ptfDF, HMLnico, Mktnico; runninglags = [250,60,20,5], HMLvars = [:sum_perNbStories_, :cumret, :aggSent_, :aggSent_RES], ptfvars = [:cumret, :aggSent_], tdperiods = (1,3776), surprises = true)
+    FFfactors = loadFFfactors()
+    HMLnico[:HML_VW_cumret] = HMLnico[:HML_VW_cumret] .- FFfactors[:RF]
+    HMLnico = DataFrame(HMLnico)
+    for i in names(HMLnico)
+        @time for lag in runninglags
+            chosenfct = custom_mean
+            if String(i)[end-2:end]=="ret"
+                chosenfct = cumret
+            end
+            HMLnico[Symbol("$(i)_l$(lag)")] = running(chosenfct, HMLnico[i], lag)
+        end
+    end
+    groupInvariants = hcat(FFfactors, HMLnico, DataFrame(Mktnico))
+
+    stackDF = ptfDF[[ptfvars; [:perid, :permno, :wt]]]
+    firstnew = size(stackDF, 2)
+    print("VWseries")
+    ptfSpecific = @time EW_VW_series(ptfDF, [Symbol("ptf_$x") for x in ptfvars], ptfvars)
+    ptfSpecific = @time daysWNOead(tdperiods, ptfSpecific, names(ptfSpecific))
+    delete!(ptfSpecific, [:perid])
+    delete!(stackDF, [:wt])
+    names!(ptfSpecific, [Symbol("ptf_$(x)") for x in names(ptfSpecific)])
+    groupInvariants = hcat(groupInvariants, ptfSpecific)
+    delete!(groupInvariants, :Date)
+    print("hey")
+    stackDF = @time excessRet(stackDF, [:cumret], groupInvariants[:RF])
+    paneldf = @time concat_groupInvariant_vars(stackDF, groupInvariants, firstnew)
+
+    return paneldf
+end
+
+
+
+
 
 function panelReg(a)
     regfactors = [String(x) for x in names(a)]
@@ -377,10 +412,11 @@ end
 
 
 function regToCsv(rowvar, resdic, depvars, eadchoice, ds, sousdic)
-    resmat = ones(Float64, 5,5)
+    resmat = ones(Float64, 10,10)
     for i in resdic
         id = i[1]
-        val, sz = parse(Int, "$id"[1]), parse(Int, "$id"[2])
+        # val, sz = parse(Int, "$id"[1]), parse(Int, "$id"[2])
+        sz, val = id[1], id[2]
         try
             resmat[val,sz] = i[2][sousdic][:coefficients][rowvar,Symbol("t-value")]
         catch
@@ -701,6 +737,8 @@ function computesurprises(ptfDF, vars, windows)
                 res[Symbol("$(var)_$(win)")] = LTsent[tokeep] .- STsent[tokeep]
             end
         end
+        res[:bmdecile] = df[:bmdecile]
+        res[:sizedecile] = df[:sizedecile]
         DataFrame(res)
     end
     return a

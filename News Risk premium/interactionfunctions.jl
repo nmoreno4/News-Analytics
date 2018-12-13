@@ -1,3 +1,6 @@
+using Distributed
+
+
 function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interactionFitnessOverTime, permnoranksovertime, permnolist, split_ranges, nbBuckets;  interactionvar = :rawnewsstrength_v, WS = "VW", control = :rawnewsstrength_lom, relcoveragetype = 1)
     crtptfcomposition = Dict()
     assignmentDict = Dict()
@@ -39,7 +42,7 @@ function siminteractionptfs(shufflerate, data, nbSim, R2FitnessOverTime, interac
         Rplot(interactionFitnessOverTime[nbBuckets] .- interactionFitnessOverTime[1])
         # R2l_plot(convert(Array{Float64}, interactionFitnessOverTime[nbBuckets]), convert(Array{Float64}, interactionFitnessOverTime[1]))
 
-        permnoranksovertime = assignranktopermno(smalltohighinteractionptf, permnoranksovertime, crtptfcomposition)
+        permnoranksovertime = assignranktopermno(smalltohighR2gainptf, permnoranksovertime, crtptfcomposition)
 
         crtAVGrankings = bestrankingstocks(permnoranksovertime, nbBuckets)
 
