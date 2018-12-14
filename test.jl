@@ -166,7 +166,7 @@ addprocs(4)
         end
     end
 
-    return n_landed_in_circle / N * 4.0
+    return [0, n_landed_in_circle / N * 4.0]
 end
 
 # for i in 1:10
@@ -175,7 +175,9 @@ end
 #     @time job = @spawn compute_pi(1000000000)
 #     @time fetch(job)
 # end
+
+j = 10
 for i in 1:5
     @time compute_pi(1000000000)
-    results = @time pmap(compute_pi,[250000000,250000000,250000000,250000000])
+    results = @time pmap(rand,[j,j,j,j])
 end

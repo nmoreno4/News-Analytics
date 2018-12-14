@@ -1,7 +1,7 @@
+using Distributed
 
 
-
-function VWeight(v, namestoVW)
+@everywhere function VWeight(v, namestoVW)
     # res = Dict()
     # v = v[isnotmissing.(v[:cumret]),:]
     # v = v[isnotmissing.(v[:wt]),:]
@@ -10,7 +10,7 @@ function VWeight(v, namestoVW)
     return sum(v[namestoVW] .* stockweight)
 end
 
-function EWeight(v, namestoVW)
+@everywhere function EWeight(v, namestoVW)
     res = Dict()
     # v = v[isnotmissing.(v[:cumret]),:]
     # v = v[isnotmissing.(v[:wt]),:]
@@ -54,7 +54,7 @@ function mysimdiff(X,Y)
 end
 
 
-function submatrixIdx(stocklist, permnosIDs)
+@everywhere function submatrixIdx(stocklist, permnosIDs)
     idxstokeep = Int[]
     for stock in stocklist
         if stock in keys(permnosIDs)
@@ -128,7 +128,7 @@ end
 
 
 
-function filtercrtDF(crtstocks, permnosIDs, dataDF, LeftOverMarket)
+@everywhere function filtercrtDF(crtstocks, permnosIDs, dataDF, LeftOverMarket)
     ptfidxs = submatrixIdx(crtstocks, permnosIDs);
     ptfdf = dataDF[ptfidxs,:];
     if LeftOverMarket
