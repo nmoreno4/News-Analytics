@@ -1,6 +1,34 @@
 
 
 
+function VWeight(v, namestoVW)
+    # res = Dict()
+    # v = v[isnotmissing.(v[:cumret]),:]
+    # v = v[isnotmissing.(v[:wt]),:]
+    totweight = sum(v[:wt])
+    stockweight = v[:wt] ./ totweight
+    return sum(v[namestoVW] .* stockweight)
+end
+
+function EWeight(v, namestoVW)
+    res = Dict()
+    # v = v[isnotmissing.(v[:cumret]),:]
+    # v = v[isnotmissing.(v[:wt]),:]
+    totweight = custom_sum(v[:wt])
+    stockweight = custom_mean(v[:wt]) ./ totweight
+    return custom_sum(v[namestoVW] .* stockweight)
+end
+
+function custom_mean(X, retval=1)
+    X = replace(X, missing=>NaN, nothing=>NaN)
+    X = replace(X, NaN=>missing)
+    X = convert(Array{Union{Float64,Missing}}, X)
+    if length(collect(skipmissing(X)))==0 && retval!==1
+        return retval
+    else
+        return mean(collect(skipmissing(X)))
+    end
+end
 
 function isnotmissing(x)
     return !ismissing(x)
@@ -29,7 +57,9 @@ end
 function submatrixIdx(stocklist, permnosIDs)
     idxstokeep = Int[]
     for stock in stocklist
-        append!(idxstokeep, permnosIDs[stock])
+        if stock in keys(permnosIDs)
+            append!(idxstokeep, permnosIDs[stock])
+        end
     end
     return idxstokeep
 end
@@ -51,7 +81,7 @@ function valueFilterIdxs(valtofilt, filternewsdays, data)
 
     for row in 1:size(data, 1)
         if filternewsdays
-            if !ismissing(data[row,:sum_perNbStories_])
+            if data[row,:sum_perNbStories_]>0
                 push!(permnoIDs[data[row,valtofilt]], row)
             end
         else
@@ -108,15 +138,4 @@ function filtercrtDF(crtstocks, permnosIDs, dataDF, LeftOverMarket)
         mktdf = dataDF
     end;
     return ptfdf, mktdf
-end
-
-
-
-function VWeight(v, namestoVW)
-    res = Dict()
-    v = v[isnotmissing.(v[:cumret]),:]
-    v = v[isnotmissing.(v[:wt]),:]
-    totweight = custom_sum(v[:wt])
-    stockweight = v[:wt] ./ totweight
-    return custom_sum(v[namestoVW] .* stockweight)
 end
