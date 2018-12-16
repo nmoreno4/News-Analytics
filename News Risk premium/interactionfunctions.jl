@@ -218,7 +218,6 @@ function bestrankingstocks(permnoranksovertime, nbBuckets)
 end
 
 
-
 function keepXpercOfArrays(crtAVGrankings, keepPerc)
     # Cut the arrays to keep x% and create a pool with all the non-selected ones
     keepPerc = 1-keepPerc

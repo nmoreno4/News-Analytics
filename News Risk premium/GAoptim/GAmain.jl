@@ -19,13 +19,13 @@ data[:rawnewsstrength] = replace(data[:rawnewsstrength], missing=>0)
 # datab = data[1:12000000,:]
 
 ########### GA Parameters ###############
-nbBuckets = 20
+nbBuckets = 40
 onlynewsdays = true
 LeftOverMarket = false
 fitnessvar = "interaction_tstat"
 decayrate = 2
-nbGenerations = 500
-mutRate = 0.9
+nbGenerations = 1200
+mutRate = 0.15
 rankmem = 100
 #########################################
 

@@ -142,14 +142,14 @@ end
 
 
 
-@everywhere function filteredVariablesParallel(crtPop)
+@everywhere function filteredVariablesParallel(crtPop, idx=2)
     crtGenerationTS = Dict()
     variablestocompute = [:VWsent_ptf, :VWret_ptf, :EWsent_ptf, :EWret_ptf, :coverage_ptf, :rawnewsstrength_ptf,
                           :VWsent_mkt, :VWret_mkt, :EWsent_mkt, :EWret_mkt, :coverage_mkt, :rawnewsstrength_mkt]
     for var in variablestocompute
         crtGenerationTS[var] = Array{Float64}(undef, 3776)
     end
-    @time for (td, subdf) in tdIDs
+    for (td, subdf) in tdIDs
         td = Int(td)
         ptfdf, mktdf = filtercrtDF(crtPop, td_permno_IDs[td], subdf, LeftOverMarket)
         # print("hey")
@@ -168,6 +168,7 @@ end
         crtGenerationTS[:rawnewsstrength_ptf][td] = sum(ptfdf[:rawnewsstrength])
         crtGenerationTS[:rawnewsstrength_mkt][td] = sum(mktdf[:rawnewsstrength])
     end
+    crtGenerationTS[:idx] = idx
     return crtGenerationTS
 end
 
@@ -288,7 +289,7 @@ end
 function crossoverMat(nbBuckets, decay, wStart=0.5)
     bID = 1
     test = splitdecay(nbBuckets, decay, bID, wStart) .* (decay*wStart)
-    for bID in 2:20
+    for bID in 2:nbBuckets
         test = hcat(test ,splitdecay(nbBuckets, decay, bID, wStart).* (decay*wStart))
     end
     return test
@@ -335,27 +336,28 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
     Pop = initialPopulation(permnoIDs, nbBuckets);
     initialPop = deepcopy(Pop)
     Popold = deepcopy(Pop)
+    dcr = mutationRate/nbGenerations
 
     stocksRanksOverTime = initRankOverTime(permnoIDs)
 
     # Loop over all generations
     for generation in 1:nbGenerations
-        print("Current generation: $generation \n")
-
-        print("Nb stocks init: $(nbStocksPop(Pop)) \n")
-
-        @time ptfTS = pmap(filteredVariablesParallel, [stocks for (rank,stocks) in Pop]);
-        fitnessDict = Dict()
-        @time for i in 1:nbBuckets
-            fitnessDict[i] = regptfspill(ptfTS[i], :rawnewsstrength_ptf, "VW", control = :rawnewsstrength_mkt, relcoveragetype = 1);
+        if generation != nbGenerations
+            mutationRate += dcr
         end
-        sortbyfitness = ones(nbBuckets,3)
-        for (key, val) in fitnessDict
-            sortbyfitness[key,1] = key
-            sortbyfitness[key,2] = val[fitnessvar][1]
-            sortbyfitness[key,3] = val["R2_gain"][1]
-        end
-        sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain]);
+        print("Current generation: $generation \n Current mutation rate : $mutationRate \n")
+
+        Popold = deepcopy(Pop)
+
+        # Compute the TS of returns and news coverage for ptfs and market
+        @time ptfTS = pmap(filteredVariablesParallel, [Pop[i] for i in 1:nbBuckets], 1:nbBuckets);
+
+        ptfTS = assignGoodKeys(nbBuckets, ptfTS)
+
+        fitnessDict = crtFitnessDict(nbBuckets, ptfTS)
+
+        sortbyfitness = assignFitness(nbBuckets, fitnessDict)
+
         sort!(sortbyfitness, :fitnessScore, rev=true)
         push!(ScoresOverTime, crtscore(sortbyfitness[:fitnessScore]))
         display(plot(sortbyfitness[:fitnessScore], title = "Fitness Score"))
@@ -363,14 +365,18 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         display(plot(sortbyfitness[:R2_gain], title = "R2 Gains"))
         display(plot(ScoresOverTime, title = "Scores over generations"))
 
+        # I confirm that Pop[1] has the highest score, Pop[20] the lowest and inbetween is correctly ordered
         Pop = reOrderDictKeys(sortbyfitness[:ptf], Pop)
 
+        print("Number of stocks that stayed in winning portfolio: $(length(intersect(Popold[1], Pop[1]))) \n")
+        print("Number of stocks that stayed in top-2 portfolio: $(length(intersect([Popold[1];Popold[2]],[Pop[1];Pop[2]]))) \n")
+        print("Number of stocks that stayed in top-3 portfolio: $(length(intersect([Popold[1];Popold[2];Popold[3]],[Pop[1];Pop[2];Pop[3]]))) \n")
 
         stocksRanksOverTime = stockRanks(stocksRanksOverTime, Pop)
 
         COmat = crossoverMat(nbBuckets, decayrate)
         newptf = Dict()
-        laststocks = zeros(20,20)
+        laststocks = zeros(nbBuckets,nbBuckets)
 
         #Shuffle the population for random splits
         for (key,val) in Pop
@@ -387,21 +393,20 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
                 laststock = Int(ceil(length(Pop[i]) * COmat[i,ptf]))
                 laststocks[ptf, i] = laststock
                 #Check if inR2_gain that portfolio i I still have enough stocks for this
-                if length(PopToEmpty[sortbyfitness[:ptf][i]])>=laststock
+                if length(PopToEmpty[i])>=laststock
                     # Add to portfolio of rank ptf the stocks from prtfolio i
-                    append!(newptf[ptf], PopToEmpty[sortbyfitness[:ptf][i]][1:laststock])
-                    if 1+laststock>length(PopToEmpty[sortbyfitness[:ptf][i]])
-                        PopToEmpty[sortbyfitness[:ptf][i]] = []
+                    append!(newptf[ptf], PopToEmpty[i][1:laststock])
+                    if 1+laststock>length(PopToEmpty[i])
+                        PopToEmpty[i] = []
                     else
-                        PopToEmpty[sortbyfitness[:ptf][i]] = PopToEmpty[sortbyfitness[:ptf][i]][1+laststock:end]
+                        PopToEmpty[i] = PopToEmpty[i][1+laststock:end]
                     end
                 end
             end
         end
 
-        print("newptf intersect CCC $(length(intersect(newptf[1], Pop[1])))\n")
-        print("newptf intersect DDD $(length(intersect(newptf[1], Popold[1])))\n")
-        print("pop and popold match: $(Popold==Pop) \n")
+        print("newptf intersect with Pop : $(length(intersect(newptf[1], Pop[1])))\n")
+        print("newptf intersect with Popold :  $(length(intersect(newptf[1], Popold[3])))\n")
 
         # Shuffle excess stocks to make sure all ptfs have the same nb of stocks
         # Find out (from old Pop with all stocks) how many stocks max a ptf can contain
@@ -415,7 +420,7 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         for (key, vals) in PopToEmpty
             append!(stocksToShuffle, vals)
         end
-        print("Nb stocks to shuffle: $(length(stocksToShuffle)) \n")
+
         # Add stocks that exceed limit of nb of stocks in ptf
         for (key, vals) in newptf
             if length(vals)>maxStocks
@@ -427,56 +432,51 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
                 end
             end
         end
-        print("Nb stocks new: $(nbStocksPop(newptf)) \n")
+
         print("newptf intersect AAA $(length(intersect(newptf[1], Pop[1])))\n")
         # Assume those leftover stocks shuffled randomly act a bit like a mutation
-        print("hey:")
-        Pop  = addStocksToShuffle(newptf, maxStocks, stocksToShuffle)
-        print("Nb stocks Pop: $(nbStocksPop(Pop)) \n")
-        print(length(intersect(Pop[1], Popold[1])))
-        print("newptf intersect $(length(intersect(newptf[1], Popold[1])))\n")
-        print("newptf intersect BBB $(length(intersect(newptf[1], Pop[1])))\n")
-        print("Pop intersect $(length(intersect(Pop[1], Popold[1])))\n")
-        print(length(Pop[1]))
-        print("\n")
+
+        newptf  = addStocksToShuffle(newptf, maxStocks, stocksToShuffle)
+        print("Nb stocks newptf: $(nbStocksPop(newptf)) \n")
+        print("newptf intersect Pop BBB $(length(intersect(newptf[1], Popold[1])))\n")
+        print("newptf intersect Popold BBB $(length(intersect(newptf[1], Pop[1])))\n")
 
 
         ## Mutate towards best
         stocksToShuffle = []
         #Shuffle the population for random splits
 
-        print("Pre-Pre-Final Nb stocks Pop: $(nbStocksPop(Pop)) \n")
         splitMutationIDX = 0
-        for (key,val) in Pop
-            Pop[key] = val[randperm(length(val))]
+        for (key,val) in newptf
+            newptf[key] = val[randperm(length(val))]
             splitMutationIDX = Int(ceil(length(val)*mutationRate))
             append!(stocksToShuffle, val[1:splitMutationIDX])
-            Pop[key] = val[(splitMutationIDX+1):end]
+            newptf[key] = val[(splitMutationIDX+1):end]
         end
 
 
-        print("Number of stocks to reshuffle: $(length(stocksToShuffle)) \n")
-        print("Pre-Final Nb stocks Pop: $(nbStocksPop(Pop)) \n")
-        BPs = ranksBPs(stocksRanksOverTime, 100*(1/nbBuckets):100*(1/nbBuckets):100)
         crtstockRanks = ones(length(stocksToShuffle),2)
         @time for i in 1:length(stocksToShuffle)
             crtstockRanks[i,1] = stocksToShuffle[i]
             crtstockRanks[i,2] = mean(stocksRanksOverTime[stocksToShuffle[i]])
         end
         @time stockRanksDF = DataFrame(crtstockRanks); names!(stockRanksDF, [:stock, :meanrank])
-        @time sort!(stockRanksDF, :meanrank, rev=true)
+        @time sort!(stockRanksDF, :meanrank, rev=false)
 
         orderedStocks = stockRanksDF[:stock]
-        print("Final Number of stocks to reshuffle: $(length(orderedStocks)) \n")
+        print("Before adding reshuffle intercept: $(length(intersect(newptf[1], Pop[1]))) \n")
         print("Size of chunks: $splitMutationIDX \n")
         @time for i in 1:nbBuckets
             if i < nbBuckets
-                append!(Pop[i], orderedStocks[1:splitMutationIDX])
+                append!(newptf[i], orderedStocks[1:splitMutationIDX])
                 orderedStocks = orderedStocks[splitMutationIDX+1:end]
             else
-                append!(Pop[i], orderedStocks[1:end])
+                append!(newptf[i], orderedStocks[1:end])
             end
         end
+        print("IIII Nb stocks Pop: $(nbStocksPop(newptf)) \n")
+        print("After adding reshuffle intercept Pop: $(length(intersect(newptf[1], Pop[1]))) \n")
+        print("After adding reshuffle intercept Popold: $(length(intersect(newptf[1], Popold[1]))) \n")
 
         # print("BPs: $BPs")
         # @time for stock in stocksToShuffle
@@ -492,18 +492,19 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         #     push!(Pop[meanptf], stock)
         # end
 
-        print("Final Nb stocks Pop: $(nbStocksPop(Pop)) \n")
-        print(length(intersect(Pop[1], Popold[1])))
+        # print("Final Nb stocks Pop: $(nbStocksPop(Pop)) \n")
+        # print(length(intersect(Pop[1], Popold[1])))
+        #
+        # for (key, val) in Pop
+        #     print("\n $(length(val))")
+        # end
 
-        for (key, val) in Pop
-            print("\n $(length(val))")
-        end
-
-        push!(intersect1OverTime, length(intersect(Pop[1], Popold[1])))
+        push!(intersect1OverTime, length(intersect(Pop[1], newptf[1])))
+        Pop = deepcopy(newptf)
         display(plot(intersect1OverTime, title = "intersect1OverTime"))
-
+        print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
     end
-    return Pop, ScoresOverTime
+    return Pop, ScoresOverTime, stocksRanksOverTime
 end
 
 
@@ -550,6 +551,17 @@ function reOrderDictKeys(X, crtPop)
 end
 
 
+function assignGoodKeys(nbBuckets, crtPop)
+    provDic = Dict()
+    for i in 1:nbBuckets
+        idx = crtPop[i][:idx]
+        delete!(crtPop[i], :idx)
+        provDic[idx] = crtPop[i]
+    end
+    return provDic
+end
+
+
 
 function initRankOverTime(XDict)
     stocksRanksOverTime = Dict()
@@ -557,4 +569,28 @@ function initRankOverTime(XDict)
         stocksRanksOverTime[stock] = Int[]
     end
     return stocksRanksOverTime
+end
+
+
+
+function crtFitnessDict(nbBuckets, ptfTS)
+    fitnessDict = Dict()
+    @time for i in 1:nbBuckets
+        fitnessDict[i] = regptfspill(ptfTS[i], :rawnewsstrength_ptf, "VW", control = :rawnewsstrength_mkt, relcoveragetype = 1);
+    end
+    return fitnessDict
+end
+
+
+
+
+function assignFitness(nbBuckets, fitnessDict)
+    sortbyfitness = ones(nbBuckets,3)
+    for (key, val) in fitnessDict
+        sortbyfitness[key,1] = key
+        sortbyfitness[key,2] = val[fitnessvar][1]
+        sortbyfitness[key,3] = val["R2_gain"][1]
+    end
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain]);
+    return sortbyfitness
 end
