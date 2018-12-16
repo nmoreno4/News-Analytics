@@ -1,10 +1,10 @@
-using JLD2, CSV, Random, DataFrames, StatsBase, Statistics, DataStructures, Distributed, Plots, ParallelDataTransfer
-addprocs(4)
+using JLD2, CSV, Random, StatsBase, Statistics, Distributed, Plots
+addprocs(1)
+@everywhere using ParallelDataTransfer, DataStructures, DataFrames
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
 
-@time JLD2.@load "/run/media/nicolas/Research/SummaryStats/agg/sectorsimple_allobs_Dates.day_(1, 3776).jld2" aggDicFreq
-data = aggDicFreq[1]
+@time JLD2.@load "/run/media/nicolas/Research/GAdata.jld2"
 @time sort!(data, [:permno, :perid])
 
 data[:sum_perNbStories_] = replace(data[:sum_perNbStories_], NaN=>0)
@@ -22,6 +22,11 @@ data[:rawnewsstrength] = replace(data[:rawnewsstrength], missing=>0)
 nbBuckets = 20
 onlynewsdays = true
 LeftOverMarket = false
+fitnessvar = "interaction_tstat"
+decayrate = 2
+nbGenerations = 100
+mutRate = 0.2
+rankmem = 20
 #########################################
 
 # Create a Dict where each entry contains a list of all rows where a stock/td/... appears
@@ -39,47 +44,137 @@ td_permno_IDs = Dict()
 end
 td_permno_IDs = SortedDict(td_permno_IDs)
 
+#data to send on other workers
+print("Sending data to other workers")
+@time sendto(workers(), LeftOverMarket=LeftOverMarket)
+@time sendto(workers(), tdIDs=tdIDs)
+@time sendto(workers(), td_permno_IDs=td_permno_IDs)
+@time sendto(workers(), data=data)
 
-Pop = initialPopulation(permnoIDs, nbBuckets);
 
-# @everywhere global td_permno_IDs = td_permno_IDs; @everywhere global tdIDs = tdIDs; @everywhere global LeftOverMarket = LeftOverMarket;
-# @time @eval @everywhere tdIDs=$tdIDs
-# @time @eval @everywhere td_permno_IDs=$td_permno_IDs
-# @time @eval @everywhere LeftOverMarket=$LeftOverMarket
-# @everywhere global filtercrtDF; @everywhere global VWeight;
-# @fetchfrom 2 LeftOverMarket
+AAA = iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem)
 
-@everywhere function filteredVariablesParallel(crtPop)
-    crtGenerationTS = Dict()
-    variablestocompute = [:VWsent_ptf, :VWret_ptf, :EWsent_ptf, :EWret_ptf, :coverage_ptf, :rawnewsstrength_ptf,
-                          :VWsent_mkt, :VWret_mkt, :EWsent_mkt, :EWret_mkt, :coverage_mkt, :rawnewsstrength_mkt]
-    for var in variablestocompute
-        crtGenerationTS[var] = Array{Float64}(undef, 3776)
+# I AM NOT COMPLETELY SURE THE CROSSOVER LOOKS FOR THE RIGHT PARENTS
+# IMPLEMENT VARYING DECAY AND MUTATION RATES (based on volatility of fitness , fitness level, etc...)
+#
+
+
+for generation in 1:nbGenerations
+    if generation == 1
+        Pop = initialPopulation(permnoIDs, nbBuckets);
     end
-    @time for (td, subdf) in tdIDs
-        td = Int(td)
-        ptfdf, mktdf = filtercrtDF(crtPop, td_permno_IDs[td], subdf, LeftOverMarket)
-        # print("hey")
-        # break
-        crtGenerationTS[:VWret_ptf][td] = VWeight(ptfdf, :cumret)
-        crtGenerationTS[:VWret_mkt][td] = VWeight(mktdf, :cumret)
-        # crtGenerationTS[:EWret_ptf][td] = EWeight(ptfdf, :cumret)
-        # crtGenerationTS[:EWret_mkt][td] = EWeight(mktdf, :cumret)
-        # crtGenerationTS[:VWsent_ptf][td] = VWeight(ptfdf, :aggSent_)
-        # crtGenerationTS[:VWsent_mkt][td] = VWeight(mktdf, :aggSent_)
-        # crtGenerationTS[:EWsent_ptf][td] = EWeight(ptfdf, :aggSent_)
-        # crtGenerationTS[:EWsent_mkt][td] = EWeight(mktdf, :aggSent_)
-
-        # crtGenerationTS[:coverage_ptf][td] = sum(ptfdf[:sum_perNbStories_])
-        # crtGenerationTS[:coverage_mkt][td] = sum(mktdf[:sum_perNbStories_])
-        crtGenerationTS[:rawnewsstrength_ptf][td] = sum(ptfdf[:rawnewsstrength])
-        crtGenerationTS[:rawnewsstrength_mkt][td] = sum(mktdf[:rawnewsstrength])
+    @time ptfTS = pmap(filteredVariablesParallel, [stocks for (rank,stocks) in Pop]);
+    fitnessDict = Dict()
+    @time for i in 1:nbBuckets
+        fitnessDict[i] = regptfspill(ptfTS[i], :rawnewsstrength_ptf, "VW", control = :rawnewsstrength_mkt, relcoveragetype = 1);
     end
-    return crtGenerationTS
+    sortbyfitness = ones(nbBuckets,2)
+    for (key, val) in fitnessDict
+        sortbyfitness[key,1] = key
+        sortbyfitness[key,2] = val[fitnessvar][1]
+    end
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore]);
+    sort!(sortbyfitness, :fitnessScore, rev=true)
+    push!(ScoresOverTime, crtscore(sortbyfitness[:fitnessScore]))
+    plot(sortbyfitness[:fitnessScore])
+    plot(ScoresOverTime)
+
+    # zScore = (sortbyfitness[:fitnessScore] .- mean(sortbyfitness[:fitnessScore])) ./ std(sortbyfitness[:fitnessScore])
+    # for i in 1:length(zScore)
+    #     if zScore[i]>2
+    #         zScore[i] = 2
+    #     end
+    # end
+    # zScore = zScore ./ 5 .+ 0.5
+    # invzScore = zScore .^-1 ./ 10
+    # sample(sortbyfitness[:ptf], Weights(zScore))
+    # sum(vcat(before, decay^-1, after) .+ missingmass/nbBuckets)
+
+    COmat = crossoverMat(nbBuckets, decayrate)
+    sum(COmat[:,1])
+    newptf = Dict()
+    laststocks = zeros(20,20)
+    Popold = copy(Pop)
+    # Loop over portfolio of stocks
+    for ptf in 1:nbBuckets
+        newptf[ptf] = []
+        # Loop over proportions for each portfolio
+        for i in 1:nbBuckets
+            # In portfolio i where I look for stocks, get a proportion as defined by COmat
+            laststock = Int(ceil(length(Popold[sortbyfitness[:ptf][i]]) * COmat[i,ptf]))
+            laststocks[ptf, i] = laststock
+            #Check if in that portfolio i I still have enough stocks for this
+            if length(Pop[sortbyfitness[:ptf][i]])>=laststock
+                # Add to portfolio of rank ptf the stocks from prtfolio i
+                append!(newptf[ptf], Pop[sortbyfitness[:ptf][i]][1:laststock])
+                if 1+laststock>length(Pop[sortbyfitness[:ptf][i]])
+                    Pop[sortbyfitness[:ptf][i]] = []
+                else
+                    Pop[sortbyfitness[:ptf][i]] = Pop[sortbyfitness[:ptf][i]][1+laststock:end]
+                end
+            end
+        end
+    end
+
+    # Shuffle excess stocks to make sure all ptfs have the same nb of stocks
+    # Find out (from old Pop with all stocks) how many stocks max a ptf can contain
+    csum = [0]
+    for (key, val) in Popold
+        csum[1]+=length(val)
+    end
+    maxStocks = Int(ceil(csum[1]/nbBuckets))
+    # Add leftover stocks from Pop
+    stocksToShuffle = []
+    for (key, vals) in Pop
+        append!(stocksToShuffle, vals)
+    end
+    # Add stocks that exceed limit of nb of stocks in ptf
+    for (key, vals) in newptf
+        if length(vals)>maxStocks
+            append!(stocksToShuffle, vals[maxStocks+1:end])
+            newptf[key] = vals[1:maxStocks]
+        end
+    end
+
+    # Assume those leftover stocks shuffled randomly act a bit like a mutation
+    print("hey")
+    Pop  = addStocksToShuffle(newptf, maxStocks, stocksToShuffle)
 end
+
+
+
+
+
+#     for row in 1:nbBuckets
+#         wvec = test[:,row] ./ sum(test[:,row])
+#         missingmass = 1-sum(test[:,row])
+#         print(missingmass)
+#         print("\n")
+#         for i in 1:length(test[row,:])
+#             test[i,row] += wvec[i]*missingmass
+#         end
+#     end
+#     print("\n")
+#     print(sum(test[:,5]))
+# end
+
+
+sum(test)
+
+#functions to send on other workers
+# @time sendto([2], filteredVariablesParallel=filteredVariablesParallel)
+
+
+# res = @time @spawnat 2 size(tdIDs[1])
+# @time fetch(res)
+# res = @time @spawnat 2 length(td_permno_IDs)
+# @time fetch(res)
+# res = @time @spawnat 2 DataFrame(Dict(1=>5))
+# @time fetch(res)
+
 @time sendto(workers(), td_permno_IDs=td_permno_IDs)
 
-@time foo = pmap(filteredVariablesParallel, [stocks for (rank,stocks) in Pop])
+
 
 foo = filteredVariablesParallel(Pop[1])
 
