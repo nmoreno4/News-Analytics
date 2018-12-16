@@ -24,9 +24,9 @@ onlynewsdays = true
 LeftOverMarket = false
 fitnessvar = "interaction_tstat"
 decayrate = 2
-nbGenerations = 100
-mutRate = 0.2
-rankmem = 20
+nbGenerations = 500
+mutRate = 0.9
+rankmem = 100
 #########################################
 
 # Create a Dict where each entry contains a list of all rows where a stock/td/... appears
@@ -51,7 +51,7 @@ print("Sending data to other workers")
 @time sendto(workers(), td_permno_IDs=td_permno_IDs)
 @time sendto(workers(), data=data)
 
-
+include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
 AAA = iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem)
 
 # I AM NOT COMPLETELY SURE THE CROSSOVER LOOKS FOR THE RIGHT PARENTS
