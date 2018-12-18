@@ -1,4 +1,4 @@
-using Distributed, RCall
+using Distributed, RCall, GLM
 
 
 @everywhere function VWeight(v, namestoVW)
@@ -142,27 +142,32 @@ end
 
 
 
-@everywhere function filteredVariablesParallel(crtPop, idx=2)
+@everywhere function filteredVariablesParallel(crtPop, idx=2, WS="VW")
     crtGenerationTS = Dict()
+    nbDays = length(keys(tdIDs))
+    firstday = minimum(keys(tdIDs))
     variablestocompute = [:VWsent_ptf, :VWret_ptf, :EWsent_ptf, :EWret_ptf, :coverage_ptf, :rawnewsstrength_ptf,
                           :VWsent_mkt, :VWret_mkt, :EWsent_mkt, :EWret_mkt, :coverage_mkt, :rawnewsstrength_mkt]
     for var in variablestocompute
-        crtGenerationTS[var] = Array{Float64}(undef, 3776)
+        crtGenerationTS[var] = Array{Float64}(undef, nbDays)
     end
     for (td, subdf) in tdIDs
-        td = Int(td)
-        ptfdf, mktdf = filtercrtDF(crtPop, td_permno_IDs[td], subdf, LeftOverMarket)
+        mattd = Int(td)
+        td = Int(td-firstday+1)
+        ptfdf, mktdf = filtercrtDF(crtPop, td_permno_IDs[mattd], subdf, LeftOverMarket)
         # print("hey")
         # break
-        crtGenerationTS[:VWret_ptf][td] = VWeight(ptfdf, :cumret)
-        crtGenerationTS[:VWret_mkt][td] = VWeight(mktdf, :cumret)
-        # crtGenerationTS[:EWret_ptf][td] = EWeight(ptfdf, :cumret)
-        # crtGenerationTS[:EWret_mkt][td] = EWeight(mktdf, :cumret)
-        # crtGenerationTS[:VWsent_ptf][td] = VWeight(ptfdf, :aggSent_)
-        # crtGenerationTS[:VWsent_mkt][td] = VWeight(mktdf, :aggSent_)
-        # crtGenerationTS[:EWsent_ptf][td] = EWeight(ptfdf, :aggSent_)
-        # crtGenerationTS[:EWsent_mkt][td] = EWeight(mktdf, :aggSent_)
-
+        if WS=="VW"
+            crtGenerationTS[:VWret_ptf][td] = VWeight(ptfdf, :cumret)
+            crtGenerationTS[:VWret_mkt][td] = VWeight(mktdf, :cumret)
+            # crtGenerationTS[:VWsent_ptf][td] = VWeight(ptfdf, :aggSent_)
+            # crtGenerationTS[:VWsent_mkt][td] = VWeight(mktdf, :aggSent_)
+        elseif WS=="EW"
+            crtGenerationTS[:EWret_ptf][td] = EWeight(ptfdf, :cumret)
+            crtGenerationTS[:EWret_mkt][td] = EWeight(mktdf, :cumret)
+            # crtGenerationTS[:EWsent_ptf][td] = EWeight(ptfdf, :aggSent_)
+            # crtGenerationTS[:EWsent_mkt][td] = EWeight(mktdf, :aggSent_)
+        end
         # crtGenerationTS[:coverage_ptf][td] = sum(ptfdf[:sum_perNbStories_])
         # crtGenerationTS[:coverage_mkt][td] = sum(mktdf[:sum_perNbStories_])
         crtGenerationTS[:rawnewsstrength_ptf][td] = sum(ptfdf[:rawnewsstrength])
@@ -177,7 +182,8 @@ end
 
 
 
-function regptfspill(allptfs, nbBuckets, newsShockVar, WS ; control = :rawnewsstrength_mkt, relcoveragetype = 1)
+function regptfspill1(allptfs, nbBuckets, newsShockVar, WS ; control = :rawnewsstrength_mkt, relcoveragetype = 1)
+    print("First")
     regres = Dict("ret_tstat_simple" => Float64[], "R2_1" => Float64[], "R2_2" => Float64[], "ret_tstat" => Float64[], "interaction_tstat" => Float64[])
     for i in 1:nbBuckets
         byday = allptfs[i]
@@ -192,10 +198,10 @@ function regptfspill(allptfs, nbBuckets, newsShockVar, WS ; control = :rawnewsst
         byday[:controlShock] = byday[control]
         @rput byday
         if WS == "VW"
-            R"mod = lm(VWret_mkt ~ VWret_ptf + VWret_ptf:newsShock + controlShock, data=byday)"
+            R"mod = lm(VWret_mkt ~ VWret_ptf + VWret_ptf:newsShock + VWret_ptf:controlShock, data=byday)"
             R"mod1 = lm(VWret_mkt ~ VWret_ptf, data=byday)"
         elseif WS=="EW"
-            R"mod = lm(EWret_mkt ~ EWret_ptf + EWret_ptf:newsShock + controlShock, data=byday)"
+            R"mod = lm(EWret_mkt ~ EWret_ptf + EWret_ptf:newsShock + EWret_ptf:controlShock, data=byday)"
             R"mod1 = lm(EWret_mkt ~ EWret_ptf, data=byday)"
         end
         R"res = summary(mod)";
@@ -216,7 +222,8 @@ function regptfspill(allptfs, nbBuckets, newsShockVar, WS ; control = :rawnewsst
     return regres
 end
 
-function regptfspill(crtptf, newsShockVar, WS ; control = :rawnewsstrength_mkt, relcoveragetype = 1)
+function regptfspill2(crtptf, newsShockVar, WS ; control = :rawnewsstrength_mkt, relcoveragetype = 1)
+    print("second")
     fitness = Dict("ret_tstat_simple" => Float64[], "R2_1" => Float64[], "R2_2" => Float64[],
                    "ret_tstat" => Float64[], "interaction_tstat" => Float64[], "R2_gain"=>Float64[])
 
@@ -229,12 +236,16 @@ function regptfspill(crtptf, newsShockVar, WS ; control = :rawnewsstrength_mkt, 
     crtptf[:newsShock] = crtptf[newsShockVar]
     crtptf[:controlShock] = crtptf[control]
     @rput crtptf
-    if WS == "VW"
-        R"mod = lm(VWret_mkt ~ VWret_ptf + VWret_ptf:newsShock + controlShock, data=crtptf)"
-        R"mod1 = lm(VWret_mkt ~ VWret_ptf, data=crtptf)"
-    elseif WS=="EW"
-        R"mod = lm(EWret_mkt ~ EWret_ptf + EWret_ptf:newsShock + controlShock, data=crtptf)"
-        R"mod1 = lm(EWret_mkt ~ EWret_ptf, data=crtptf)"
+    try
+        if WS == "VW"
+            R"mod = lm(VWret_mkt ~ VWret_ptf + VWret_ptf:newsShock + VWret_ptf:controlShock, data=crtptf)"
+            R"mod1 = lm(VWret_mkt ~ VWret_ptf, data=crtptf)"
+        elseif WS=="EW"
+            R"mod = lm(EWret_mkt ~ EWret_ptf + EWret_ptf:newsShock + EWret_ptf:controlShock, data=crtptf)"
+            R"mod1 = lm(EWret_mkt ~ EWret_ptf, data=crtptf)"
+        end
+    catch
+        error(crtptf[:relcoverage])
     end
     R"res = summary(mod)";
     R"res1 = summary(mod1)";
@@ -330,13 +341,13 @@ end
 
 
 
-function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutationRate, rankmemory)
+function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutationRate, rankmemory, WS)
     ScoresOverTime = Float64[]
     intersect1OverTime = Float64[]
     Pop = initialPopulation(permnoIDs, nbBuckets);
     initialPop = deepcopy(Pop)
     Popold = deepcopy(Pop)
-    dcr = mutationRate/nbGenerations
+    dcr = (1-mutationRate)/nbGenerations
 
     stocksRanksOverTime = initRankOverTime(permnoIDs)
 
@@ -350,27 +361,31 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         Popold = deepcopy(Pop)
 
         # Compute the TS of returns and news coverage for ptfs and market
-        @time ptfTS = pmap(filteredVariablesParallel, [Pop[i] for i in 1:nbBuckets], 1:nbBuckets);
+        ptfTS = pmap(filteredVariablesParallel, [Pop[i] for i in 1:nbBuckets], 1:nbBuckets, repeat([WS],nbBuckets));
 
         ptfTS = assignGoodKeys(nbBuckets, ptfTS)
 
-        fitnessDict = crtFitnessDict(nbBuckets, ptfTS)
+        fitnessDict = crtFitnessDict(nbBuckets, ptfTS, WS)
 
         sortbyfitness = assignFitness(nbBuckets, fitnessDict)
 
         sort!(sortbyfitness, :fitnessScore, rev=true)
         push!(ScoresOverTime, crtscore(sortbyfitness[:fitnessScore]))
-        display(plot(sortbyfitness[:fitnessScore], title = "Fitness Score"))
-        display(plot(sortbyfitness[:ptf], title = "Sorted ptf ranks"))
-        display(plot(sortbyfitness[:R2_gain], title = "R2 Gains"))
-        display(plot(ScoresOverTime, title = "Scores over generations"))
+        if generation in 10:50:nbGenerations
+            display(plot(sortbyfitness[:fitnessScore], title = "Fitness Score"))
+            display(plot(sortbyfitness[:ptf], title = "Sorted ptf ranks"))
+            display(plot!(1:nbBuckets))
+            display(plot(sortbyfitness[:R2_gain], title = "R2 Gains"))
+            display(plot(sortbyfitness[:R2_1], title = "R2 1"))
+            display(plot(ScoresOverTime, title = "Scores over generations : $generation"))
+        end
 
         # I confirm that Pop[1] has the highest score, Pop[20] the lowest and inbetween is correctly ordered
         Pop = reOrderDictKeys(sortbyfitness[:ptf], Pop)
 
-        print("Number of stocks that stayed in winning portfolio: $(length(intersect(Popold[1], Pop[1]))) \n")
-        print("Number of stocks that stayed in top-2 portfolio: $(length(intersect([Popold[1];Popold[2]],[Pop[1];Pop[2]]))) \n")
-        print("Number of stocks that stayed in top-3 portfolio: $(length(intersect([Popold[1];Popold[2];Popold[3]],[Pop[1];Pop[2];Pop[3]]))) \n")
+        # print("Number of stocks that stayed in winning portfolio: $(length(intersect(Popold[1], Pop[1]))) \n")
+        # print("Number of stocks that stayed in top-2 portfolio: $(length(intersect([Popold[1];Popold[2]],[Pop[1];Pop[2]]))) \n")
+        # print("Number of stocks that stayed in top-3 portfolio: $(length(intersect([Popold[1];Popold[2];Popold[3]],[Pop[1];Pop[2];Pop[3]]))) \n")
 
         stocksRanksOverTime = stockRanks(stocksRanksOverTime, Pop)
 
@@ -405,8 +420,8 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
             end
         end
 
-        print("newptf intersect with Pop : $(length(intersect(newptf[1], Pop[1])))\n")
-        print("newptf intersect with Popold :  $(length(intersect(newptf[1], Popold[3])))\n")
+        # print("newptf intersect with Pop : $(length(intersect(newptf[1], Pop[1])))\n")
+        # print("newptf intersect with Popold :  $(length(intersect(newptf[1], Popold[3])))\n")
 
         # Shuffle excess stocks to make sure all ptfs have the same nb of stocks
         # Find out (from old Pop with all stocks) how many stocks max a ptf can contain
@@ -433,13 +448,13 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
             end
         end
 
-        print("newptf intersect AAA $(length(intersect(newptf[1], Pop[1])))\n")
+        # print("newptf intersect AAA $(length(intersect(newptf[1], Pop[1])))\n")
         # Assume those leftover stocks shuffled randomly act a bit like a mutation
 
         newptf  = addStocksToShuffle(newptf, maxStocks, stocksToShuffle)
-        print("Nb stocks newptf: $(nbStocksPop(newptf)) \n")
-        print("newptf intersect Pop BBB $(length(intersect(newptf[1], Popold[1])))\n")
-        print("newptf intersect Popold BBB $(length(intersect(newptf[1], Pop[1])))\n")
+        # print("Nb stocks newptf: $(nbStocksPop(newptf)) \n")
+        # print("newptf intersect Pop BBB $(length(intersect(newptf[1], Popold[1])))\n")
+        # print("newptf intersect Popold BBB $(length(intersect(newptf[1], Pop[1])))\n")
 
 
         ## Mutate towards best
@@ -456,27 +471,32 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
 
 
         crtstockRanks = ones(length(stocksToShuffle),2)
-        @time for i in 1:length(stocksToShuffle)
+        for i in 1:length(stocksToShuffle)
             crtstockRanks[i,1] = stocksToShuffle[i]
             crtstockRanks[i,2] = mean(stocksRanksOverTime[stocksToShuffle[i]])
         end
-        @time stockRanksDF = DataFrame(crtstockRanks); names!(stockRanksDF, [:stock, :meanrank])
-        @time sort!(stockRanksDF, :meanrank, rev=false)
+        stockRanksDF = DataFrame(crtstockRanks); names!(stockRanksDF, [:stock, :meanrank])
+        sort!(stockRanksDF, :meanrank, rev=false)
 
         orderedStocks = stockRanksDF[:stock]
-        print("Before adding reshuffle intercept: $(length(intersect(newptf[1], Pop[1]))) \n")
-        print("Size of chunks: $splitMutationIDX \n")
-        @time for i in 1:nbBuckets
+        # print("Before adding reshuffle intercept: $(length(intersect(newptf[1], Pop[1]))) \n")
+        # print("Size of chunks: $splitMutationIDX \n")
+        for i in 1:nbBuckets
             if i < nbBuckets
-                append!(newptf[i], orderedStocks[1:splitMutationIDX])
-                orderedStocks = orderedStocks[splitMutationIDX+1:end]
+                if splitMutationIDX>length(orderedStocks)
+                    append!(newptf[i], orderedStocks[1:Int(ceil(splitMutationIDX/2))])
+                    orderedStocks = orderedStocks[Int(ceil(splitMutationIDX/2))+1:end]
+                else
+                    append!(newptf[i], orderedStocks[1:splitMutationIDX])
+                    orderedStocks = orderedStocks[splitMutationIDX+1:end]
+                end
             else
                 append!(newptf[i], orderedStocks[1:end])
             end
         end
-        print("IIII Nb stocks Pop: $(nbStocksPop(newptf)) \n")
-        print("After adding reshuffle intercept Pop: $(length(intersect(newptf[1], Pop[1]))) \n")
-        print("After adding reshuffle intercept Popold: $(length(intersect(newptf[1], Popold[1]))) \n")
+        # print("IIII Nb stocks Pop: $(nbStocksPop(newptf)) \n")
+        # print("After adding reshuffle intercept Pop: $(length(intersect(newptf[1], Pop[1]))) \n")
+        # print("After adding reshuffle intercept Popold: $(length(intersect(newptf[1], Popold[1]))) \n")
 
         # print("BPs: $BPs")
         # @time for stock in stocksToShuffle
@@ -501,8 +521,8 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
 
         push!(intersect1OverTime, length(intersect(Pop[1], newptf[1])))
         Pop = deepcopy(newptf)
-        display(plot(intersect1OverTime, title = "intersect1OverTime"))
-        print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
+        # display(plot(intersect1OverTime, title = "intersect1OverTime"))
+        # print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
     end
     return Pop, ScoresOverTime, stocksRanksOverTime
 end
@@ -573,10 +593,10 @@ end
 
 
 
-function crtFitnessDict(nbBuckets, ptfTS)
+function crtFitnessDict(nbBuckets, ptfTS, WS)
     fitnessDict = Dict()
-    @time for i in 1:nbBuckets
-        fitnessDict[i] = regptfspill(ptfTS[i], :rawnewsstrength_ptf, "VW", control = :rawnewsstrength_mkt, relcoveragetype = 1);
+    for i in 1:nbBuckets
+        fitnessDict[i] = regptfspill(ptfTS[i], :rawnewsstrength_ptf, WS, control = :rawnewsstrength_mkt, relcoveragetype = 1);
     end
     return fitnessDict
 end
@@ -585,12 +605,82 @@ end
 
 
 function assignFitness(nbBuckets, fitnessDict)
-    sortbyfitness = ones(nbBuckets,3)
+    sortbyfitness = ones(nbBuckets,4)
     for (key, val) in fitnessDict
         sortbyfitness[key,1] = key
         sortbyfitness[key,2] = val[fitnessvar][1]
         sortbyfitness[key,3] = val["R2_gain"][1]
+        sortbyfitness[key,4] = val["R2_1"][1]
     end
-    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain]);
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain, :R2_1]);
     return sortbyfitness
+end
+
+
+
+
+function regptfspill(crtptf, newsShockVar, WS ; control = :rawnewsstrength_mkt, relcoveragetype = 1)
+    fitness = Dict("ret_tstat_simple" => Float64[], "R2_1" => Float64[], "R2_2" => Float64[],
+                   "ret_tstat" => Float64[], "interaction_tstat" => Float64[], "R2_gain"=>Float64[])
+    if relcoveragetype==1
+       crtptf[:relcoverage] = crtptf[:rawnewsstrength_ptf] ./ crtptf[:rawnewsstrength_mkt]
+    elseif relcoveragetype==2
+       crtptf[:relcoverage] = crtptf[:coverage_ptf] ./ crtptf[:coverage_mkt]
+    end
+
+    crtptf[:newsShock] = crtptf[newsShockVar]
+    crtptf[:controlShock] = crtptf[control]
+    crtptf = convert(DataFrame, crtptf)
+    res, res1 = 0, 0
+    if sum(crtptf[:newsShock])!=0
+        if WS == "VW"
+           res = lm(@formula(VWret_mkt ~ VWret_ptf + VWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
+           res1 = lm(@formula(VWret_mkt ~ VWret_ptf + controlShock&VWret_ptf), crtptf)
+        elseif WS=="EW"
+           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
+           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&VWret_ptf), crtptf)
+        end
+    else
+        show(crtptf[[:VWret_mkt, :VWret_ptf, :newsShock, :controlShock]])
+        crtptf[:newsShock][1] = 0.2
+        if WS == "VW"
+           res = lm(@formula(VWret_mkt ~ VWret_ptf + VWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
+           res1 = lm(@formula(VWret_mkt ~ VWret_ptf + controlShock&VWret_ptf), crtptf)
+        elseif WS=="EW"
+           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
+           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&VWret_ptf), crtptf)
+        end
+    end
+    regDF = OLScoeftableToDF(res)
+    regDF1 = OLScoeftableToDF(res1)
+    push!(fitness["R2_1"], adjr2(res))
+    push!(fitness["R2_2"], adjr2(res1))
+    push!(fitness["R2_gain"], adjr2(res)-adjr2(res1))
+
+    if WS == "VW"
+       push!(fitness["ret_tstat"], regDF[findall(regDF[:depvar].=="VWret_ptf & newsShock")[1], Symbol("t value")])
+       push!(fitness["ret_tstat_simple"], regDF[findall(regDF[:depvar].=="VWret_ptf & controlShock")[1], Symbol("t value")])
+       push!(fitness["interaction_tstat"], regDF[findall(regDF[:depvar].=="VWret_ptf & newsShock")[1], Symbol("t value")])
+    elseif WS=="EW"
+        push!(fitness["ret_tstat"], regDF[findall(regDF[:depvar].=="EWret_ptf & newsShock")[1], Symbol("t value")])
+        push!(fitness["ret_tstat_simple"], regDF[findall(regDF[:depvar].=="EWret_ptf & controlShock")[1], Symbol("t value")])
+        push!(fitness["interaction_tstat"], regDF[findall(regDF[:depvar].=="EWret_ptf & newsShock")[1], Symbol("t value")])
+    end
+    return fitness
+end
+
+
+
+
+function OLScoeftableToDF(crttable)
+    crttable = coeftable(crttable)
+    depvars = crttable.rownms
+    crtcolnames = crttable.colnms
+    resDF = depvars
+    for i in 1:length(crttable.cols)
+        resDF = hcat(resDF, crttable.cols[i])
+    end
+    resDF = convert(DataFrame, resDF)
+    names!(resDF, [[:depvar]; [Symbol(x) for x in crtcolnames]])
+    return resDF
 end

@@ -1,5 +1,5 @@
-using JLD2, CSV, Random, StatsBase, Statistics, Distributed, Plots
-addprocs(1)
+using JLD2, CSV, Random, StatsBase, Statistics, Distributed, Plots, Dates
+addprocs(4)
 @everywhere using ParallelDataTransfer, DataStructures, DataFrames
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
@@ -19,40 +19,79 @@ data[:rawnewsstrength] = replace(data[:rawnewsstrength], missing=>0)
 # datab = data[1:12000000,:]
 
 ########### GA Parameters ###############
-nbBuckets = 40
-onlynewsdays = true
-LeftOverMarket = false
+nbBuckets = 80
+onlynewsdays = false
+LeftOverMarket = true
 fitnessvar = "interaction_tstat"
-decayrate = 2
-nbGenerations = 1200
-mutRate = 0.15
-rankmem = 100
+decayrate = 1.5
+nbGenerations = 500
+mutRate = 0.01
+rankmem = 1000
+WS="VW"
 #########################################
 
-# Create a Dict where each entry contains a list of all rows where a stock/td/... appears
-@time permnoIDs = valueFilterIdxs(:permno, onlynewsdays, data);
-@time tdIDs = valueFilterIdxs(:perid, false, data);
-@time for (td, idxs) in tdIDs
-    tdIDs[td] = data[idxs,:]
+########## Time filter ##################
+FFfactors = CSV.read("/run/media/nicolas/Research/FF/dailyFactors.csv")[1:3776,:]
+todate = x -> Date(string(x),"yyyymmdd")
+dates = todate.(FFfactors[:Date])
+ymonth = convert(Array{Any}, Dates.yearmonth.(dates))
+for i in 1:length(ymonth)
+    ymonth[i] = "$(ymonth[i])"
 end
-# Instead of just keeping the IDs, keep the whole dataframes for reference!!
-
-tdIDs = SortedDict(tdIDs)
-td_permno_IDs = Dict()
-@time for (td, subdf) in tdIDs
-    td_permno_IDs[td] = valueFilterIdxs(:permno, onlynewsdays, subdf);
+months = Dates.month.(dates)
+weekdays = Dates.dayname.(dates)
+ys = Dates.year.(dates)
+wmy = []
+for (i,j,k) in zip(Dates.week.(dates), ys,months)
+    push!(wmy, "$i $j $k")
 end
-td_permno_IDs = SortedDict(td_permno_IDs)
+qy = []
+for (i,j) in zip(Dates.quarterofyear.(dates), ys)
+    push!(qy, "$i $j")
+end
+data[:timefilter] = "(0,0)"
+@time for row in 1:size(data,1)
+    data[row,:timefilter] = ymonth[Int(data[row,:perid])]
+end
+dataTofilterFrom = deepcopy(data)
 
-#data to send on other workers
-print("Sending data to other workers")
-@time sendto(workers(), LeftOverMarket=LeftOverMarket)
-@time sendto(workers(), tdIDs=tdIDs)
-@time sendto(workers(), td_permno_IDs=td_permno_IDs)
-@time sendto(workers(), data=data)
+###147 didn't work out!
+for periodID in 149:180
 
-include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
-AAA = iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem)
+    print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n CURRENT DATE : $periodID \n\n\n\n\n\n\n\n $(Dates.format(now(), "HH:MM:SS")) \n\n\n\n\n\n\n\n\n\n\n\n")
+
+    data = dataTofilterFrom[dataTofilterFrom[:timefilter].==ymonth[periodID],:]
+    ###############################################
+
+
+    # Create a Dict where each entry contains a list of all rows where a stock/td/... appears
+    @time permnoIDs = valueFilterIdxs(:permno, onlynewsdays, data);
+    @time tdIDs = valueFilterIdxs(:perid, false, data);
+    @time for (td, idxs) in tdIDs
+        tdIDs[td] = data[idxs,:]
+    end
+    # Instead of just keeping the IDs, keep the whole dataframes for reference!!
+
+    tdIDs = SortedDict(tdIDs)
+    td_permno_IDs = Dict()
+    @time for (td, subdf) in tdIDs
+        td_permno_IDs[td] = valueFilterIdxs(:permno, onlynewsdays, subdf);
+    end
+    td_permno_IDs = SortedDict(td_permno_IDs)
+
+    #data to send on other workers
+    print("Sending data to other workers")
+    @time sendto(workers(), LeftOverMarket=LeftOverMarket)
+    @time sendto(workers(), tdIDs=tdIDs)
+    @time sendto(workers(), td_permno_IDs=td_permno_IDs)
+    @time sendto(workers(), data=data)
+
+    include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
+    AAA = iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem, WS)
+
+    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_Me$(rankmem)_on$(onlynewsdays)_lom$(LeftOverMarket)_WS$(WS).jld2"
+    JLD2.@save filepathname AAA
+end #for periodID
 
 # I AM NOT COMPLETELY SURE THE CROSSOVER LOOKS FOR THE RIGHT PARENTS
 # IMPLEMENT VARYING DECAY AND MUTATION RATES (based on volatility of fitness , fitness level, etc...)
@@ -73,7 +112,7 @@ for generation in 1:nbGenerations
         sortbyfitness[key,1] = key
         sortbyfitness[key,2] = val[fitnessvar][1]
     end
-    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore]);
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!nbDays(sortbyfitness, [:ptf, :fitnessScore]);
     sort!(sortbyfitness, :fitnessScore, rev=true)
     push!(ScoresOverTime, crtscore(sortbyfitness[:fitnessScore]))
     plot(sortbyfitness[:fitnessScore])
