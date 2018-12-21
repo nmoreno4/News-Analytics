@@ -14,9 +14,9 @@ end
     res = Dict()
     # v = v[isnotmissing.(v[:cumret]),:]
     # v = v[isnotmissing.(v[:wt]),:]
-    totweight = custom_sum(v[:wt])
-    stockweight = custom_mean(v[:wt]) ./ totweight
-    return custom_sum(v[namestoVW] .* stockweight)
+    totweight = sum(v[:wt])
+    stockweight = mean(v[:wt]) ./ totweight
+    return sum(v[namestoVW] .* stockweight)
 end
 
 function custom_mean(X, retval=1)
@@ -113,11 +113,11 @@ end
 
 
 
-
 function initialPopulation(permnosIDs, nBuckets)
     allstocks = collect(keys(permnosIDs))
     allstocks = allstocks[randperm(length(allstocks))]
-    split_ranges = partition_array_indices(length(allstocks),Int(ceil(length(allstocks)/nBuckets)))
+    print("\n Arg 1 : $(length(allstocks))  \n Arg 2: $(Int(ceil(length(allstocks)/nBuckets)))\n")
+    split_ranges = partition_array_indices(length(allstocks),Int(floor(length(allstocks)/nBuckets)))
     Population = Dict()
     for i in 1:length(split_ranges)
         Population[i] = allstocks[split_ranges[i]]
@@ -159,6 +159,12 @@ end
         # break
         if WS=="VW"
             crtGenerationTS[:VWret_ptf][td] = VWeight(ptfdf, :cumret)
+            if crtGenerationTS[:VWret_ptf][td]==0
+                show(ptfdf)
+                print("\n NB of stocks in Pop: $(length(crtPop)) \n")
+                print(td_permno_IDs[mattd])
+                break
+            end
             crtGenerationTS[:VWret_mkt][td] = VWeight(mktdf, :cumret)
             # crtGenerationTS[:VWsent_ptf][td] = VWeight(ptfdf, :aggSent_)
             # crtGenerationTS[:VWsent_mkt][td] = VWeight(mktdf, :aggSent_)
@@ -377,7 +383,9 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
             display(plot!(1:nbBuckets))
             display(plot(sortbyfitness[:R2_gain], title = "R2 Gains"))
             display(plot(sortbyfitness[:R2_1], title = "R2 1"))
+            display(plot(sortbyfitness[:R2_2], title = "R2 2"))
             display(plot(ScoresOverTime, title = "Scores over generations : $generation"))
+            display(plot!(runmean(ScoresOverTime, Int(ceil(length(ScoresOverTime)/10)))))
         end
 
         # I confirm that Pop[1] has the highest score, Pop[20] the lowest and inbetween is correctly ordered
@@ -456,7 +464,6 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         # print("newptf intersect Pop BBB $(length(intersect(newptf[1], Popold[1])))\n")
         # print("newptf intersect Popold BBB $(length(intersect(newptf[1], Pop[1])))\n")
 
-
         ## Mutate towards best
         stocksToShuffle = []
         #Shuffle the population for random splits
@@ -481,11 +488,16 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         orderedStocks = stockRanksDF[:stock]
         # print("Before adding reshuffle intercept: $(length(intersect(newptf[1], Pop[1]))) \n")
         # print("Size of chunks: $splitMutationIDX \n")
+        percdimordStocks = 0 #on each iteration, by how much is the orderedStocks vector emptied?
         for i in 1:nbBuckets
             if i < nbBuckets
-                if splitMutationIDX>length(orderedStocks)
-                    append!(newptf[i], orderedStocks[1:Int(ceil(splitMutationIDX/2))])
-                    orderedStocks = orderedStocks[Int(ceil(splitMutationIDX/2))+1:end]
+                if percdimordStocks-length(orderedStocks)/nbBuckets == length(orderedStocks)/nbBuckets
+                    print("Ptf was about the get completely emptied \n")
+                    append!(newptf[i], orderedStocks[1:Int(floor(splitMutationIDX/3))])
+                    orderedStocks = orderedStocks[Int(floor(splitMutationIDX/3))+1:end]
+                elseif splitMutationIDX>length(orderedStocks)
+                    append!(newptf[i], orderedStocks[1:Int(floor(splitMutationIDX/2))])
+                    orderedStocks = orderedStocks[Int(floor(splitMutationIDX/2))+1:end]
                 else
                     append!(newptf[i], orderedStocks[1:splitMutationIDX])
                     orderedStocks = orderedStocks[splitMutationIDX+1:end]
@@ -493,6 +505,7 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
             else
                 append!(newptf[i], orderedStocks[1:end])
             end
+            percdimordStocks = length(orderedStocks)/nbBuckets
         end
         # print("IIII Nb stocks Pop: $(nbStocksPop(newptf)) \n")
         # print("After adding reshuffle intercept Pop: $(length(intersect(newptf[1], Pop[1]))) \n")
@@ -522,7 +535,8 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         push!(intersect1OverTime, length(intersect(Pop[1], newptf[1])))
         Pop = deepcopy(newptf)
         # display(plot(intersect1OverTime, title = "intersect1OverTime"))
-        # print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
+        print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
+        print("Number of stocks in Popold: $(nbStocksPop(Popold)) \n")
     end
     return Pop, ScoresOverTime, stocksRanksOverTime
 end
@@ -605,14 +619,15 @@ end
 
 
 function assignFitness(nbBuckets, fitnessDict)
-    sortbyfitness = ones(nbBuckets,4)
+    sortbyfitness = ones(nbBuckets,5)
     for (key, val) in fitnessDict
         sortbyfitness[key,1] = key
         sortbyfitness[key,2] = val[fitnessvar][1]
         sortbyfitness[key,3] = val["R2_gain"][1]
         sortbyfitness[key,4] = val["R2_1"][1]
+        sortbyfitness[key,5] = val["R2_2"][1]
     end
-    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain, :R2_1]);
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain, :R2_1, :R2_2]);
     return sortbyfitness
 end
 
@@ -632,23 +647,35 @@ function regptfspill(crtptf, newsShockVar, WS ; control = :rawnewsstrength_mkt, 
     crtptf[:controlShock] = crtptf[control]
     crtptf = convert(DataFrame, crtptf)
     res, res1 = 0, 0
-    if sum(crtptf[:newsShock])!=0
+    if WS=="VW"
+        crtWS = :VWret_ptf
+    elseif WS=="EW"
+        crtWS = :EWret_ptf
+    end
+
+    if sum(crtptf[:newsShock])!=0 && sum(crtptf[crtWS])!=0
         if WS == "VW"
            res = lm(@formula(VWret_mkt ~ VWret_ptf + VWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
            res1 = lm(@formula(VWret_mkt ~ VWret_ptf + controlShock&VWret_ptf), crtptf)
         elseif WS=="EW"
-           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
-           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&VWret_ptf), crtptf)
+           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&EWret_ptf), crtptf)
+           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&EWret_ptf), crtptf)
         end
     else
         show(crtptf[[:VWret_mkt, :VWret_ptf, :newsShock, :controlShock]])
-        crtptf[:newsShock][1] = 0.2
+        if sum(crtptf[:newsShock])==0
+            crtptf[:newsShock][1] = rand()
+        end
+        if sum(crtptf[:VWret_ptf])==0
+            crtptf[:VWret_ptf][1] = rand()
+        end
+        print(crtptf[:VWret_ptf])
         if WS == "VW"
            res = lm(@formula(VWret_mkt ~ VWret_ptf + VWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
            res1 = lm(@formula(VWret_mkt ~ VWret_ptf + controlShock&VWret_ptf), crtptf)
         elseif WS=="EW"
-           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&VWret_ptf), crtptf)
-           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&VWret_ptf), crtptf)
+           res = lm(@formula(EWret_mkt ~ EWret_ptf + EWret_ptf&newsShock + controlShock&EWret_ptf), crtptf)
+           res1 = lm(@formula(EWret_mkt ~ EWret_ptf + controlShock&EWret_ptf), crtptf)
         end
     end
     regDF = OLScoeftableToDF(res)

@@ -1,10 +1,10 @@
-using JLD2, CSV, Random, StatsBase, Statistics, Distributed, Plots, Dates
+using JLD2, CSV, Random, StatsBase, Distributed, Plots, Dates, RollingFunctions, TSmap
 addprocs(4)
-@everywhere using ParallelDataTransfer, DataStructures, DataFrames
+@everywhere using ParallelDataTransfer, DataStructures, DataFrames, Statistics
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
 
-@time JLD2.@load "/run/media/nicolas/Research/GAdata.jld2"
+@time JLD2.@load "/run/media/nicolas/Research/GAdataRES.jld2"
 @time sort!(data, [:permno, :perid])
 
 data[:sum_perNbStories_] = replace(data[:sum_perNbStories_], NaN=>0)
@@ -12,57 +12,42 @@ data[:sum_perNbStories_] = replace(data[:sum_perNbStories_], missing=>0)
 data[:rawnewsstrength] = abs.(data[:sum_perSent_])
 data[:rawnewsstrength] = replace(data[:rawnewsstrength], NaN=>0)
 data[:rawnewsstrength] = replace(data[:rawnewsstrength], missing=>0)
-
-@time data = data[isnotmissing.(data[:cumret]),:];
+@time data = data[(!).(ismissing.(data[:cumret])),:]
 @time data = data[isnotmissing.(data[:wt]),:];
 
 # datab = data[1:12000000,:]
 
 ########### GA Parameters ###############
-nbBuckets = 80
+nbBuckets = 50
 onlynewsdays = false
 LeftOverMarket = true
 fitnessvar = "interaction_tstat"
-decayrate = 1.5
-nbGenerations = 500
+decayrate = 2
+nbGenerations = 250
 mutRate = 0.01
-rankmem = 1000
+rankmem = 999
 WS="VW"
 #########################################
 
 ########## Time filter ##################
-FFfactors = CSV.read("/run/media/nicolas/Research/FF/dailyFactors.csv")[1:3776,:]
-todate = x -> Date(string(x),"yyyymmdd")
-dates = todate.(FFfactors[:Date])
-ymonth = convert(Array{Any}, Dates.yearmonth.(dates))
-for i in 1:length(ymonth)
-    ymonth[i] = "$(ymonth[i])"
-end
-months = Dates.month.(dates)
-weekdays = Dates.dayname.(dates)
-ys = Dates.year.(dates)
-wmy = []
-for (i,j,k) in zip(Dates.week.(dates), ys,months)
-    push!(wmy, "$i $j $k")
-end
-qy = []
-for (i,j) in zip(Dates.quarterofyear.(dates), ys)
-    push!(qy, "$i $j")
-end
+TSfreqs = TSfreq()
 data[:timefilter] = "(0,0)"
+##### Chosen freq param #####
+freq = TSfreqs[:qy]
+#############################
 @time for row in 1:size(data,1)
-    data[row,:timefilter] = ymonth[Int(data[row,:perid])]
+    data[row,:timefilter] = freq[Int(data[row,:perid])]
 end
 dataTofilterFrom = deepcopy(data)
+freq = sort(collect(Set(TSfreqs[:qy])))
 
-###147 didn't work out!
-for periodID in 149:180
+###need to restart at 149 didn't work out!
+for periodID in 30:length(freq)
 
     print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n CURRENT DATE : $periodID \n\n\n\n\n\n\n\n $(Dates.format(now(), "HH:MM:SS")) \n\n\n\n\n\n\n\n\n\n\n\n")
 
-    data = dataTofilterFrom[dataTofilterFrom[:timefilter].==ymonth[periodID],:]
+    data = dataTofilterFrom[dataTofilterFrom[:timefilter].==freq[periodID],:]
     ###############################################
-
 
     # Create a Dict where each entry contains a list of all rows where a stock/td/... appears
     @time permnoIDs = valueFilterIdxs(:permno, onlynewsdays, data);
@@ -87,9 +72,20 @@ for periodID in 149:180
     @time sendto(workers(), data=data)
 
     include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
-    AAA = iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem, WS)
+    AAA = @time iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem, WS)
 
-    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_Me$(rankmem)_on$(onlynewsdays)_lom$(LeftOverMarket)_WS$(WS).jld2"
+    if onlynewsdays
+        on = "t"
+    else
+        on = "f"
+    end
+    if LeftOverMarket
+        lOm = "t"
+    else
+        lOm = "f"
+    end
+    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_F$(length(freq))_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_on$(on)_lom$(lOm)_WS$(WS).jld2"
+    print(filepathname)
     JLD2.@save filepathname AAA
 end #for periodID
 
