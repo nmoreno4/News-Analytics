@@ -11,7 +11,7 @@ function TSfreq(FFpath="/run/media/nicolas/Research/FF/dailyFactors.csv", rowsto
     dates = todate.(FFfactors[:Date])
     ymonth = convert(Array{Any}, Dates.yearmonth.(dates))
     for i in 1:length(ymonth)
-        ymonth[i] = "$(ymonth[i])"
+        ymonth[i] = "$(ymonth[i][1]*100 + ymonth[i][2])"
     end
     months = Dates.month.(dates)
     weekdays = Dates.dayname.(dates)

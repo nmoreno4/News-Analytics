@@ -1,27 +1,37 @@
-using JLD2, Statistics, DataFrames, Plots, TSmap, FindFcts, RetManip, PtfPerf, StatsBase, NaNMath
+using JLD2, Statistics, DataFrames, Plots, TSmap, RetManip, PtfPerf, StatsBase, NaNMath
 
-@time JLD2.@load "/run/media/nicolas/Research/GAdata.jld2"
+@time JLD2.@load "/run/media/nicolas/Research/GAdataRES.jld2"
 TSfreqs = TSfreq()
 
-ptfBreakpoints = [(0,5), (0,10), (10,20), (20,50), (50,80), (80,100), (90,100), (0,100)]
+ptfBreakpoints = [(0,10), (10,35), (35,65), (65,80), (90,100), (0,100)]
 ########### GA Parameters ###############
-nbBuckets = 50
+nbBuckets = 20
 onlynewsdays = false
 LeftOverMarket = true
 fitnessvar = "interaction_tstat"
 decayrate = 2
-nbGenerations = 250
+nbGenerations = 6000
 mutRate = 0.01
-rankmem = 999
-WS="VW"
-freq = TSfreqs[:qy]
+rankmem = 350
+WS="EW"
+sizefilter = 2
+freq = :qy
 #########################################
+@time data = data[data[:sizedecile].>sizefilter,:]
+####################
+
+########## Time filter ##################
+TSfreqs = TSfreq()
 data[:timefilter] = "(0,0)"
+##### Chosen freq param #####
+periods = TSfreqs[freq]
+#############################
 @time for row in 1:size(data,1)
-    data[row,:timefilter] = freq[Int(data[row,:perid])]
+    data[row,:timefilter] = periods[Int(data[row,:perid])]
 end
-freq = sort(collect(Set(TSfreqs[:qy])))
 dataTofilterFrom = deepcopy(data)
+periods = sort(collect(Set(TSfreqs[freq])))
+
 
 
 Res = Dict()
@@ -29,21 +39,11 @@ for (low, high) in ptfBreakpoints
     Res[(low, high)] = Float64[]
 end
 
-for periodID in 1:length(freq)
-    if onlynewsdays
-        on = "t"
-    else
-        on = "f"
-    end
-    if LeftOverMarket
-        lOm = "t"
-    else
-        lOm = "f"
-    end
-    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_F$(length(freq))_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_on$(on)_lom$(lOm)_WS$(WS).jld2"
+for periodID in 1:length(periods)
+    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_F$(freq)_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_on$(onlynewsdays)_lom$(LeftOverMarket)_WS$(WS).jld2"
     JLD2.@load filepathname AAA
 
-    print(freq[periodID])
+    print(periods[periodID])
     stockRanks = AAA[3]
     stockVec, meanrankVec = [], Float64[]
     for (stock, ranks) in stockRanks
@@ -53,26 +53,21 @@ for periodID in 1:length(freq)
     rankDF = DataFrame(Dict("stock"=>stockVec, "meanrank"=>meanrankVec))
     sort!(rankDF, :meanrank)
     rankDF[:meanrank] = replace(rankDF[:meanrank], NaN=>NaNMath.mean(rankDF[:meanrank]))
-
-    crtDF = dataTofilterFrom[dataTofilterFrom[:timefilter].==freq[periodID],:]
+    crtDF = dataTofilterFrom[dataTofilterFrom[:timefilter].==periods[periodID],:]
     for (low, high) in ptfBreakpoints
-        print((low,high))
         plow = percentile(rankDF[:meanrank], low)
         phigh = percentile(rankDF[:meanrank], high)
-        SensStocks = rankDF[(rankDF[:meanrank].>=plow) .& (rankDF[:meanrank].<=phigh), :stock]
+        SensStocks = convert(Array{Float64}, rankDF[(rankDF[:meanrank].>=plow) .& (rankDF[:meanrank].<=phigh), :stock])
         append!(Res[(low, high)], ptfRet(crtDF, SensStocks, VWeight))
     end
-    display(plot(ret2tick(Res[ptfBreakpoints[1]]), title = "Portfolio value over time"))
-    display(plot!(ret2tick(Res[ptfBreakpoints[3]])))
-    display(plot!(ret2tick(Res[ptfBreakpoints[7]]), color = :black))
-    display(plot!(ret2tick(Res[ptfBreakpoints[8]]), color = :yellow))
-    display(plot(ret2tick(Res[ptfBreakpoints[1]].-Res[ptfBreakpoints[7]]), title = "Spread SMI 1"))
-    display(plot(ret2tick(Res[ptfBreakpoints[2]].-Res[ptfBreakpoints[7]]), title = "Spread SMI 2"))
-    display(plot(ret2tick(Res[ptfBreakpoints[3]].-Res[ptfBreakpoints[7]]), title = "Spread SMI 3"))
+    display(plot(ret2tick(Res[ptfBreakpoints[1]]), title = "High"))
+    display(plot(ret2tick(Res[ptfBreakpoints[5]]), title = "Low"))
+    display(plot(ret2tick(Res[ptfBreakpoints[6]]), color = :black, title = "Mkt"))
+    # display(plot(ret2tick(Res[ptfBreakpoints[1]].-Res[ptfBreakpoints[5]]), title = "Spread SMI 1"))
 end
 
 plot(ret2tick(Res[ptfBreakpoints[1]]))
-plot!(ret2tick(Res[ptfBreakpoints[7]]))
+plot!(ret2tick(Res[ptfBreakpoints[5]]))
 plot!(ret2tick(Res[ptfBreakpoints[7]]))
 res = Float64[]
 for i in 1:length(ptfBreakpoints)

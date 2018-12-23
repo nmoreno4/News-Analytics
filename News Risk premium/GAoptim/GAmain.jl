@@ -1,4 +1,4 @@
-using JLD2, CSV, Random, StatsBase, Distributed, Plots, Dates, RollingFunctions, TSmap
+using JLD2, CSV, Random, StatsBase, Distributed, Plots, Dates, RollingFunctions, TSmap, FindFcts
 addprocs(4)
 @everywhere using ParallelDataTransfer, DataStructures, DataFrames, Statistics
 laptop = "/home/nicolas/github/News-Analytics"
@@ -17,36 +17,45 @@ data[:rawnewsstrength] = replace(data[:rawnewsstrength], missing=>0)
 
 # datab = data[1:12000000,:]
 
+
+
 ########### GA Parameters ###############
-nbBuckets = 50
+nbBuckets = 20
 onlynewsdays = false
 LeftOverMarket = true
 fitnessvar = "interaction_tstat"
 decayrate = 2
-nbGenerations = 250
+nbGenerations = 6000
 mutRate = 0.01
-rankmem = 999
-WS="VW"
+rankmem = 350
+WS="EW"
+sizefilter = 2
+freq = :qy
 #########################################
+
+### Size filter ####
+@time data = data[data[:sizedecile].>sizefilter,:]
+####################
 
 ########## Time filter ##################
 TSfreqs = TSfreq()
 data[:timefilter] = "(0,0)"
 ##### Chosen freq param #####
-freq = TSfreqs[:qy]
+periods = TSfreqs[freq]
 #############################
 @time for row in 1:size(data,1)
-    data[row,:timefilter] = freq[Int(data[row,:perid])]
+    data[row,:timefilter] = periods[Int(data[row,:perid])]
 end
 dataTofilterFrom = deepcopy(data)
-freq = sort(collect(Set(TSfreqs[:qy])))
+periods = sort(collect(Set(TSfreqs[freq])))
 
-###need to restart at 149 didn't work out!
-for periodID in 30:length(freq)
+#In quarterly I need to start back at 24
+for periodID in 24:length(periods)
 
     print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n CURRENT DATE : $periodID \n\n\n\n\n\n\n\n $(Dates.format(now(), "HH:MM:SS")) \n\n\n\n\n\n\n\n\n\n\n\n")
 
-    data = dataTofilterFrom[dataTofilterFrom[:timefilter].==freq[periodID],:]
+    data = dataTofilterFrom[dataTofilterFrom[:timefilter].==periods[periodID],:]
+
     ###############################################
 
     # Create a Dict where each entry contains a list of all rows where a stock/td/... appears
@@ -74,17 +83,7 @@ for periodID in 30:length(freq)
     include("$(laptop)/News Risk premium/GAoptim/GAhelp.jl")
     AAA = @time iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmem, WS)
 
-    if onlynewsdays
-        on = "t"
-    else
-        on = "f"
-    end
-    if LeftOverMarket
-        lOm = "t"
-    else
-        lOm = "f"
-    end
-    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_F$(length(freq))_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_on$(on)_lom$(lOm)_WS$(WS).jld2"
+    filepathname = "/run/media/nicolas/Research/GAoptims/G$(nbGenerations)_P$(periodID)_F$(freq)_B$(nbBuckets)_D$(decayrate)_Mu$(mutRate)_on$(onlynewsdays)_lom$(LeftOverMarket)_WS$(WS).jld2"
     print(filepathname)
     JLD2.@save filepathname AAA
 end #for periodID

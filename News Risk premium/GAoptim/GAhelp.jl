@@ -1,4 +1,4 @@
-using Distributed, RCall, GLM
+using Distributed, RCall, GLM, FindFcts
 
 
 @everywhere function VWeight(v, namestoVW)
@@ -79,14 +79,11 @@ function valueFilterIdxs(valtofilt, filternewsdays, data)
         permnoIDs[permno] = Int[]
     end
 
+    if filternewsdays
+        data = filterSubDfSum(data, permno, :rawnewsstrength, 0)
+    end
     for row in 1:size(data, 1)
-        if filternewsdays
-            if data[row,:sum_perNbStories_]>0
-                push!(permnoIDs[data[row,valtofilt]], row)
-            end
-        else
-            push!(permnoIDs[data[row,valtofilt]], row)
-        end
+        push!(permnoIDs[data[row,valtofilt]], row)
     end
 
     return permnoIDs
@@ -347,28 +344,33 @@ end
 
 
 
-function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutationRate, rankmemory, WS)
+function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGenerations, mutRate, rankmemory, WS, plotfreq=500)
     ScoresOverTime = Float64[]
     intersect1OverTime = Float64[]
     Pop = initialPopulation(permnoIDs, nbBuckets);
     initialPop = deepcopy(Pop)
     Popold = deepcopy(Pop)
-    dcr = (1-mutationRate)/nbGenerations
+    mutationRate = copy(mutRate)
+    dcr = (1-mutationRate)/(nbGenerations*0.5)
 
     stocksRanksOverTime = initRankOverTime(permnoIDs)
+
 
     # Loop over all generations
     for generation in 1:nbGenerations
         if generation != nbGenerations
             mutationRate += dcr
         end
-        print("Current generation: $generation \n Current mutation rate : $mutationRate \n")
+        if mutationRate>0.98
+            dcr = dcr*0.8
+            mutationRate = mutationRate*0.85
+        end
 
         Popold = deepcopy(Pop)
 
         # Compute the TS of returns and news coverage for ptfs and market
         ptfTS = pmap(filteredVariablesParallel, [Pop[i] for i in 1:nbBuckets], 1:nbBuckets, repeat([WS],nbBuckets));
-
+        #Transform to "i" indexed Dictionary
         ptfTS = assignGoodKeys(nbBuckets, ptfTS)
 
         fitnessDict = crtFitnessDict(nbBuckets, ptfTS, WS)
@@ -377,15 +379,17 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
 
         sort!(sortbyfitness, :fitnessScore, rev=true)
         push!(ScoresOverTime, crtscore(sortbyfitness[:fitnessScore]))
-        if generation in 10:50:nbGenerations
-            display(plot(sortbyfitness[:fitnessScore], title = "Fitness Score"))
+        if generation in plotfreq:plotfreq:nbGenerations || generation==nbGenerations
+            print("Current generation: $generation \n Current mutation rate : $mutationRate \n")
+            display(plot(sortbyfitness[:R2_1], title = "R2 1"))
+            display(plot(sortbyfitness[:R2_2], title = "R2 2"))
             display(plot(sortbyfitness[:ptf], title = "Sorted ptf ranks"))
             display(plot!(1:nbBuckets))
             display(plot(sortbyfitness[:R2_gain], title = "R2 Gains"))
-            display(plot(sortbyfitness[:R2_1], title = "R2 1"))
-            display(plot(sortbyfitness[:R2_2], title = "R2 2"))
             display(plot(ScoresOverTime, title = "Scores over generations : $generation"))
             display(plot!(runmean(ScoresOverTime, Int(ceil(length(ScoresOverTime)/10)))))
+            display(plot(sortbyfitness[:fitnessScore], title = "Fitness Score"))
+            display(plot(sortbyfitness[:ret_tstat_simple], title = "Control Score"))
         end
 
         # I confirm that Pop[1] has the highest score, Pop[20] the lowest and inbetween is correctly ordered
@@ -395,7 +399,7 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         # print("Number of stocks that stayed in top-2 portfolio: $(length(intersect([Popold[1];Popold[2]],[Pop[1];Pop[2]]))) \n")
         # print("Number of stocks that stayed in top-3 portfolio: $(length(intersect([Popold[1];Popold[2];Popold[3]],[Pop[1];Pop[2];Pop[3]]))) \n")
 
-        stocksRanksOverTime = stockRanks(stocksRanksOverTime, Pop)
+        stocksRanksOverTime = stockRanks(stocksRanksOverTime, Pop, sortbyfitness)
 
         COmat = crossoverMat(nbBuckets, decayrate)
         newptf = Dict()
@@ -495,6 +499,8 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
                     print("Ptf was about the get completely emptied \n")
                     append!(newptf[i], orderedStocks[1:Int(floor(splitMutationIDX/3))])
                     orderedStocks = orderedStocks[Int(floor(splitMutationIDX/3))+1:end]
+                elseif length(orderedStocks)<3
+                    orderedStocks = orderedStocks
                 elseif splitMutationIDX>length(orderedStocks)
                     append!(newptf[i], orderedStocks[1:Int(floor(splitMutationIDX/2))])
                     orderedStocks = orderedStocks[Int(floor(splitMutationIDX/2))+1:end]
@@ -535,16 +541,17 @@ function iterateGenerations(permnoIDs, nbBuckets, fitnessvar, decayrate, nbGener
         push!(intersect1OverTime, length(intersect(Pop[1], newptf[1])))
         Pop = deepcopy(newptf)
         # display(plot(intersect1OverTime, title = "intersect1OverTime"))
-        print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
-        print("Number of stocks in Popold: $(nbStocksPop(Popold)) \n")
+        # print("Number of stocks in Pop before new generation: $(nbStocksPop(Pop)) \n")
+        # print("Number of stocks in Popold: $(nbStocksPop(Popold)) \n")
     end
     return Pop, ScoresOverTime, stocksRanksOverTime
 end
 
 
-function stockRanks(stocksRanksOverTime, crtPop)
+function stockRanks(stocksRanksOverTime, crtPop, sortbyfitness)
     for (key,val) in crtPop
         for stock in val
+            # push!(stocksRanksOverTime[stock], sortbyfitness[sortbyfitness[:ptf].==key,:fitnessScore][1])
             push!(stocksRanksOverTime[stock], key)
         end
     end
@@ -600,7 +607,7 @@ end
 function initRankOverTime(XDict)
     stocksRanksOverTime = Dict()
     for stock in keys(XDict)
-        stocksRanksOverTime[stock] = Int[]
+        stocksRanksOverTime[stock] = Float64[]
     end
     return stocksRanksOverTime
 end
@@ -619,15 +626,16 @@ end
 
 
 function assignFitness(nbBuckets, fitnessDict)
-    sortbyfitness = ones(nbBuckets,5)
+    sortbyfitness = ones(nbBuckets,6)
     for (key, val) in fitnessDict
         sortbyfitness[key,1] = key
         sortbyfitness[key,2] = val[fitnessvar][1]
         sortbyfitness[key,3] = val["R2_gain"][1]
         sortbyfitness[key,4] = val["R2_1"][1]
         sortbyfitness[key,5] = val["R2_2"][1]
+        sortbyfitness[key,6] = val["ret_tstat_simple"][1]
     end
-    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain, :R2_1, :R2_2]);
+    sortbyfitness = convert(DataFrame, sortbyfitness); names!(sortbyfitness, [:ptf, :fitnessScore, :R2_gain, :R2_1, :R2_2, :ret_tstat_simple]);
     return sortbyfitness
 end
 
@@ -710,4 +718,30 @@ function OLScoeftableToDF(crttable)
     resDF = convert(DataFrame, resDF)
     names!(resDF, [[:depvar]; [Symbol(x) for x in crtcolnames]])
     return resDF
+end
+
+
+"""
+    filterSubDfSum(data::DataFrame, X::Symbol, Y::Symbol, thresh::Number)
+
+### Description
+Deletes all entries in *data* for a value of *X* (e.g. a permno) where the sum
+of the *Y* for the subdataframe of *X* is above *thresh*.
+
+### Arguments
+- `data::DataFrame`: A DataFrame containing at least a column named *:X* and another named *:Y*.
+- `X::Symbol`: a Symbol for the column on which to make subDataframes.
+- `Y::Symbol`: a Symbol for the column requering a to reach thresh by each subdataframe.
+- `thresh::Number`: The threshold for the sum to reach.
+
+### Returns
+- `filteredData::DataFrame` : The dataframe where all X have a sum of Y exceeding thresh.
+"""
+function filterSubDfSum(data::DataFrame, X::Symbol, Y::Symbol, thresh::Number)::DataFrame
+    subDFsum = by(data, X) do cdf
+        sum(cdf[Y])
+    end
+    chosenX = subDFsum[subDFsum[:x1].>0,X]
+    filteredData = data[isin_IDX(data, X, convert(Array{Float64}, chosenX)),:]
+    return filteredData
 end

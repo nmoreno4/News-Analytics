@@ -6,9 +6,6 @@ using RCall, DataFrames
 
 export CSdownload, CRSPdownload, linktabledownload, delistdownload, gatherWRDSdata, FF_factors_download
 
-function testf()
-    print("lol")
-end
 
 function FF_factors_download(daterange = ["01/01/2003", "12/31/2017"], datatable = "FACTORS_DAILY")
     #or FACTORS_MONTHLY
