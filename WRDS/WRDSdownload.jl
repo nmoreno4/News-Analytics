@@ -1,16 +1,15 @@
 module WRDSdownload
-
 using RCall, DataFrames
-@rlibrary RPostgres
-@rlibrary DBI
 
-export CSdownload, CRSPdownload, linktabledownload, delistdownload, gatherWRDSdata, FF_factors_download
+export CSdownload, CRSPdownload, linktabledownload, delistdownload, FF_factors_download
 
 
 function FF_factors_download(daterange = ["01/01/2003", "12/31/2017"], datatable = "FACTORS_DAILY")
     #or FACTORS_MONTHLY
     @rput daterange
     @rput datatable
+    R"library(RPostgres)"
+    R"library(DBI)"
     R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
                       host='wrds-pgdata.wharton.upenn.edu',
                       port=9737,
@@ -32,7 +31,8 @@ function CSdownload(daterange = ["01/01/2003", "12/31/2017"], CSvariables = "gvk
     @rput daterange
     @rput CSvariables
     @rput datatable
-    print("hey")
+    R"library(RPostgres)"
+    R"library(DBI)"
     R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
                       host='wrds-pgdata.wharton.upenn.edu',
                       port=9737,
@@ -40,13 +40,6 @@ function CSdownload(daterange = ["01/01/2003", "12/31/2017"], CSvariables = "gvk
                       password='M@riel@mbertu193807',
                       sslmode='require',
                       dbname='wrds')"
-    R"print(paste(\"SELECT\", CSvariables,
-                            \"FROM\", datatable,
-                            \"WHERE indfmt='INDL'
-                              and datafmt='STD'
-                              and popsrc='D'
-                              and consol='C'
-                              and datadate between '\", daterange[1], \"' and '\", daterange[2], \"'\"))"
     R"res <- DBI::dbSendQuery(wrds, paste(\"SELECT\", CSvariables,
                             \"FROM\", datatable,
                             \"WHERE indfmt='INDL'
@@ -67,6 +60,8 @@ function CRSPdownload(daterange = ["01/01/2003", "12/31/2017"], CRSPvariables = 
     @rput daterange
     @rput CRSPvariables
     @rput datatable
+    R"library(RPostgres)"
+    R"library(DBI)"
     R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
                       host='wrds-pgdata.wharton.upenn.edu',
                       port=9737,
@@ -83,6 +78,8 @@ function CRSPdownload(daterange = ["01/01/2003", "12/31/2017"], CRSPvariables = 
 end
 
 function linktabledownload()
+    R"library(RPostgres)"
+    R"library(DBI)"
     R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
                       host='wrds-pgdata.wharton.upenn.edu',
                       port=9737,
@@ -99,6 +96,8 @@ function linktabledownload()
 end
 
 function delistdownload(freq="m")
+    R"library(RPostgres)"
+    R"library(DBI)"
     R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
                       host='wrds-pgdata.wharton.upenn.edu',
                       port=9737,
@@ -119,53 +118,5 @@ function delistdownload(freq="m")
     @rget delist
     return delist
 end
-
-
-function gatherWRDSdata()
-    CSvariables = "gvkey, datadate, cusip, conm, atq, ceqq, ibq, ltq, revtq, saleq, seqq, txditcq, xintq, exchg, pstkq, pstkrq, pstknq"
-    CRSPvariables = "permno, exchcd, ticker, comnam, permco, prc, vol, ret, shrout, spread, retx"
-    @rput CSvariables
-    R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
-                      host='wrds-pgdata.wharton.upenn.edu',
-                      port=9737,
-                      user='mlam',
-                      password='M@riel@mbertu193807',
-                      sslmode='require',
-                      dbname='wrds')"
-    R"res <- RPostgres::dbSendQuery(wrds, \"SELECT gvkey, datadate, cusip, conm, atq, ceqq, ibq, ltq, revtq, saleq, seqq, txditcq, xintq, exchg, pstkq, pstkrq, pstknq
-                              FROM comp.fundq
-                              WHERE indfmt='INDL'
-                                and datafmt='STD'
-                                and popsrc='D'
-                                and consol='C'
-                                and datadate >= '01/01/2015'\")"
-    R"compustat <- dbFetch(res, n=-1)"
-    R"dbClearResult(res)"
-    R"res <- dbSendQuery(wrds, \"SELECT a.permno, a.permco, a.date, b.shrcd, b.exchcd, a.ret, a.retx, a.shrout, a.prc, a.vol, a.spread
-                              FROM crsp.msf as a
-                              left join crsp.msenames as b
-                              on a.permno=b.permno
-                              and b.namedt<=a.date
-                              and a.date<=b.nameendt
-                              WHERE date between '01/01/1959' and '12/31/2017'
-                              and b.exchcd between 1 and 3\")"
-    R"CRSP <- dbFetch(res, n=-1)"
-    R"dbClearResult(res)"
-    R"res <- dbSendQuery(wrds, \"SELECT *
-                                 FROM crsp.ccmxpf_linktable\")"
-    R"linktable <- dbFetch(res, n=-1)"
-    R"dbClearResult(res)"
-    R"res <- dbSendQuery(wrds, \"SELECT permno, dlret, dlstdt
-                                 FROM crsp.msedelist\")"
-    R"delist <- dbFetch(res, n=-1)"
-    R"DBI::dbClearResult(res)"
-    R"DBI::dbDisconnect(wrds)"
-    @rget linktable
-    @rget compustat
-    @rget CRSP
-    @rget delist
-
-    return (compustat, CRSP, delist, linktable)
-    end
 
 end #module

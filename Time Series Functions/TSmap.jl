@@ -9,20 +9,18 @@ function TSfreq(FFpath="/run/media/nicolas/Research/FF/dailyFactors.csv", rowsto
     FFfactors = CSV.read(FFpath)[rowstoread,:]
     todate = x -> Date(string(x),"yyyymmdd")
     dates = todate.(FFfactors[:Date])
-    ymonth = convert(Array{Any}, Dates.yearmonth.(dates))
-    for i in 1:length(ymonth)
-        ymonth[i] = "$(ymonth[i][1]*100 + ymonth[i][2])"
-    end
-    months = Dates.month.(dates)
-    weekdays = Dates.dayname.(dates)
-    ys = convert(Array{Any}, Dates.year.(dates))
-    wmy = []
-    for (i,j,k) in zip(Dates.week.(dates), ys,months)
-        push!(wmy, "$k $j $i")
-    end
+    ys = Dates.year.(dates)
     qy = []
-    for (i,j) in zip(Dates.quarterofyear.(dates), ys)
-        push!(qy, "$j $i")
+    for (q, y) in zip(Dates.quarterofyear.(dates),  Dates.year.(dates))
+        push!(qy, y*10+q)
+    end
+    wmy = []
+    for (y,m,w) in zip(Dates.year.(dates) ,Dates.month.(dates), Dates.week.(dates))
+        push!(wmy, y*10000+m*100+w)
+    end
+    ymonth = []
+    for (y,m) in zip(Dates.year.(dates) ,Dates.month.(dates))
+        push!(ymonth, y*100+m)
     end
     return Dict(:weekdays=>weekdays, :wmy=>wmy, :months=>months, :qy=>qy, :ymonth=>ymonth, :ys=>ys)
 end
