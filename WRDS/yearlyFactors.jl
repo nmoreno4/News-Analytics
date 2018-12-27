@@ -1,6 +1,7 @@
 ##########################################################################################
 # This file gathers yearly data from Compustat and monthly data from CRSP to construct
-# FF factor breakpoints.
+# FF factor breakpoints. It stores the merged monthly CRSP data, the yearly CS and the
+# size and B/M decile rankings in the MongoDB Dec2018 database in collection PermnoDay.
 ##########################################################################################
 using WRDSdownload, CSV, DataFrames, JLD2, StatsBase, Dates, Statistics,
       RollingFunctions, ShiftedArrays, Buckets, PermidMatch
@@ -324,11 +325,16 @@ database = client["Dec2018"]
 collection = database["PermnoDay"]
 
 for row in 1:size(monthlyMerge,1)
-    if row in [100,20000,150000,300000,700000]
+
+    # Show advancement
+    if row in 15000:15000:size(monthlyMerge,1)
         print("Advnacement : ~$(round(100*row/size(monthlyMerge,1)))% \n")
     end
+
     crtrow = monthlyMerge[row:row,:]
     colids = names(crtrow)
+
+    # Create a dictionary to insert dropping missing values
     colstodelete = Symbol[]
     for i in 1:size(crtrow,2)
         if ismissing(crtrow[i][1])
@@ -338,10 +344,13 @@ for row in 1:size(monthlyMerge,1)
     if length(colstodelete)>0
         delete!(crtrow,colstodelete)
     end
+
+    # Create selector and updator dictionaries
     setDict = Dict(zip([string(x) for x in names(crtrow)], Matrix(crtrow)))
     selectDict = [Dict("permno"=>setDict["permno"]), Dict("ymonth"=>setDict["ymonth"])]
     DataFrames.deletecols!(setDict, ["permno", "ymonth"])
 
+    # Update all matching in MongoDB
     crtselector = Mongoc.BSON(Dict("\$and" => selectDict))
     crtupdate = Mongoc.BSON(Dict("\$set"=>setDict))
     Mongoc.update_many(collection, crtselector, crtupdate)

@@ -1,7 +1,7 @@
 module ReadReuters
 
 using Dates, Statistics
-export parseTRNAjson, aggTakes, xInArrayOfDicts, customSentClass, findLongest
+export parseTRNAjson, aggTakes, xInArrayOfDicts, customSentClass, findLongest, computeTopicScores
 
 function parseTRNAjson(j, datef)
 
@@ -74,6 +74,7 @@ function aggTakes(takes)
     res["companyCount"] = xInArrayOfDicts(takes, mean, "companyCount")
     res["linkedIds"] = xInArrayOfDicts(takes, findLongest, "linkedIds")
     res["headline"] = xInArrayOfDicts(takes, findLongest, "headline")
+    res["topics"] = xInArrayOfDicts(takes, findLongest, "topics")
     res["wordCount"] = xInArrayOfDicts(takes, mean, "wordCount")
     res["firstCreated"] = xInArrayOfDicts(takes, minimum, "firstCreated")
     res["assetName"] = xInArrayOfDicts(takes, findLongest, "assetName")
@@ -124,6 +125,108 @@ function findLongest(X)
 end
 
 
+
+"""
+Not specifying top2 and top3 will do a plain vanilla filter with all stories
+on the topic.
+Each argument should be a tuple with the topic as String in it's first argument
+and a boolean indicating if I want all those new's topic (true) or all news without
+that topic (false).
+top1 is the "stonger" conditioning if top1, top2 and top3 are provided given the
+ordering of abjoin and bcjoin
+"""
+function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=false, abjoin=&, bcjoin=&)
+    stCount = 0
+    posSum = 0
+    negSum = 0
+    for i in 1:length(permnoday)
+        if top1==() && top2==() && top3==()
+            if typeof(novFilter)==Bool && !novFilter
+                stCount+=1
+                posSum+=permnoday[i]["sentimentPositive"]
+                negSum+=permnoday[i]["sentimentNegative"]
+            elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                stCount+=1
+                posSum+=permnoday[i]["sentimentPositive"]
+                negSum+=permnoday[i]["sentimentNegative"]
+            end
+        elseif top2==() && top3==()
+            top1[2] ? a = in : a = !in
+            top1[2] ? aBitOp = (|) : aBitOp = (&)
+            if "topicsArchive" in keys(permnoday[i])
+                topicCond = aBitOp(a(top1[1], permnoday[i]["topics"]), a(top1[1], permnoday[i]["topicsArchive"]))
+            else
+                topicCond = a(top1[1], permnoday[i]["topics"])
+            end
+            if topicCond
+                if typeof(novFilter)==Bool && !novFilter
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                end
+            end
+        elseif length(top2)>0 && top3==()
+            top1[2] ? a = in : a = !in
+            top1[2] ? aBitOp = (|) : aBitOp = (&)
+            top2[2] ? b = in : b = !in
+            top2[2] ? bBitOp = (|) : bBitOp = (&)
+
+            if "topicsArchive" in keys(permnoday[i])
+                topicCond = abjoin(aBitOp(a(top1[1], permnoday[i]["topics"]), a(top1[1], permnoday[i]["topicsArchive"])),
+                                   bBitOp(b(top2[1], permnoday[i]["topics"]), b(top2[1], permnoday[i]["topicsArchive"])))
+            else
+                topicCond = abjoin(a(top1[1], permnoday[i]["topics"]),
+                                   b(top2[1], permnoday[i]["topics"]))
+            end
+
+            if topicCond
+                if typeof(novFilter)==Bool && !novFilter
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                end
+            end
+        elseif length(top2)>0 && length(top3)>0
+            top1[2] ? a = in : a = !in
+            top1[2] ? aBitOp = (|) : aBitOp = (&)
+            top2[2] ? b = in : b = !in
+            top2[2] ? bBitOp = (|) : bBitOp = (&)
+            top3[2] ? c = in : c = !in
+            top3[2] ? cBitOp = (|) : cBitOp = (&)
+
+            if "topicsArchive" in keys(permnoday[i])
+                topicCond = abjoin(aBitOp(a(top1[1], permnoday[i]["topics"]), a(top1[1], permnoday[i]["topicsArchive"])),
+                                   bcjoin(bBitOp(b(top2[1], permnoday[i]["topics"]), b(top2[1], permnoday[i]["topicsArchive"])),
+                                          cBitOp(c(top3[1], permnoday[i]["topics"]), c(top3[1], permnoday[i]["topicsArchive"]))))
+            else
+                topicCond = abjoin(a(top1[1], permnoday[i]["topics"]),
+                                   bcjoin(b(top2[1], permnoday[i]["topics"]),
+                                          c(top3[1], permnoday[i]["topics"])))
+            end
+
+            if topicCond
+                if typeof(novFilter)==Bool && !novFilter
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                    stCount+=1
+                    posSum+=permnoday[i]["sentimentPositive"]
+                    negSum+=permnoday[i]["sentimentNegative"]
+                end
+            end
+        end
+    end
+    return stCount, posSum, negSum
+end
 
 
 end # module
