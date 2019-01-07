@@ -7,9 +7,10 @@ using WRDSdownload, CSV, DataFrames, JLD2, StatsBase, Dates, Statistics,
       RollingFunctions, ShiftedArrays, Buckets, PermidMatch
 
 #Span of working period
-CSdaterange = ["01/01/1999", "12/31/2017"]
-CRSPdaterange = ["01/01/1999", "12/31/2017"]
+CSdaterange = ["01/01/2000", "12/31/2019"]
+CRSPdaterange = ["01/01/2000", "7/1/2018"]
 truestart = Dates.Date(2003,1,1)
+trueend = Dates.Date(2017,12,31)
 
 ############## Compustat Variable description ##############
 # at:
@@ -62,7 +63,10 @@ CSdf[:year] = Dates.year.(CSdf[:datadate])
 # the breakpoints for BE/ME or when forming the size-BE/ME portfolios.
 ##########################################################################################
 # create preferrerd stock
-CSdf[:ps] = coalesce.(CSdf[:pstk],CSdf[:pstkl],CSdf[:pstkrv],0)
+a = coalesce.(CSdf[:pstkrv],CSdf[:pstkl])
+b = coalesce.(a,CSdf[:pstk])
+CSdf[:ps] = coalesce.(a,CSdf[:pstk],0)
+
 # Compute book equity
 CSdf[:txditc] = coalesce.(CSdf[:txditc],0)
 CSdf[:be] = CSdf[:seq] .+ CSdf[:txditc] .- CSdf[:ps]
@@ -98,30 +102,31 @@ for var in [:permno, :permco, :shrcd, :exchcd]
 end
 
 # Line up date to be end of month. At the end I will only keep those from the month of june.
-CRSPdf[:jdate] = ceil.(CRSPdf[:date], Dates.Month)-Dates.Day(1)
+CRSPdf[:jdate] = ceil.(CRSPdf[:date] .+ Dates.Day(1), Dates.Month) .- Dates.Day(1)
 
 # Download delisting return table
 delistdf = delistdownload("m")
-delistdf[:jdate] = ceil.(delistdf[:dlstdt], Dates.Month)-Dates.Day(1)
-@time CRSPdf = join(CRSPdf, delistdf, on = [:jdate, :permno], kind = :left)
+delistdf[:jdate] = ceil.(delistdf[:dlstdt] .+ Dates.Day(1), Dates.Month) .- Dates.Day(1)
+
+@time CRSPdf = join(CRSPdf, delistdf, on = [:permno, :jdate], kind = :left)
 CRSPdf[ismissing.(CRSPdf[:dlret]), :dlret] = 0
 CRSPdf[ismissing.(CRSPdf[:ret]), :ret] = 0
 CRSPdf[:retadj]=(1 .+ CRSPdf[:ret]) .* (1 .+ CRSPdf[:dlret]) .-1
 
 # Compute market equity : ME = Price * Shares Outstanding
 CRSPdf[:me] = abs.(CRSPdf[:prc] .* CRSPdf[:shrout])
-delete!(CRSPdf, [:dlret, :dlstdt, :shrout])
+DataFrames.deletecols!(CRSPdf, [:dlret, :dlstdt, :shrout])
 @time sort!(CRSPdf, [:jdate, :permco, :me])
 
 # Aggregate Market Cap permno-permco
 # sum of me across different permno belonging to same permco a given date
-crsp_summe = @time by(CRSPdf, [:jdate, :permco], me = :me => x-> sum(x))
+crsp_summe = @time by(CRSPdf, [:jdate, :permco], me = :me => x-> sum(skipmissing(x)))
 # largest mktcap within a permco/date
-crsp_maxme = @time by(CRSPdf, [:jdate, :permco], me = :me => x-> maximum(x))
+crsp_maxme = @time by(CRSPdf, [:jdate, :permco], me = :me => x-> length(collect(skipmissing(x))) > 0 ? maximum(skipmissing(x)) : missing )
 # Keep only permno with max permcos. Join by jdate/maxme to find the permno
 CRSPdf = @time join(CRSPdf, crsp_maxme, on = [:jdate, :permco, :me], kind = :inner)
 # drop me column and replace with the sum me
-delete!(CRSPdf, :me)
+DataFrames.deletecols!(CRSPdf, :me)
 # join with sum of me to get the correct market cap info
 CRSPdf = join(CRSPdf, crsp_summe, on = [:jdate, :permco], kind = :inner)
 sort!(CRSPdf, [:permno, :jdate])
@@ -135,7 +140,7 @@ decme = decme[:, [:permno, :date, :jdate, :me, :year]]
 names!(decme, [:permno, :date, :jdate, :dec_me, :year])
 
 ### July to June dates ###
-CRSPdf[:ffdate] = CRSPdf[:jdate]-Dates.Month(6)
+CRSPdf[:ffdate] = ceil.(CRSPdf[:jdate] .-Dates.Month(6) .+ Dates.Day(1), Dates.Month) .- Dates.Day(1)
 CRSPdf[:ffyear] = Dates.year.(CRSPdf[:ffdate])
 CRSPdf[:ffmonth] = Dates.month.(CRSPdf[:ffdate])
 CRSPdf[ismissing.(CRSPdf[:retx]), :retx] = 0
@@ -144,23 +149,24 @@ CRSPdf[:retxplus1] = 1 .+ CRSPdf[:retx]
 
 CRSPdf[:cumretx] = by(CRSPdf, [:permno, :ffyear], cumretx = :retxplus1 => x-> cumprod(x))[:cumretx]
 # lag cumret
-CRSPdf[:lcumretx] = by(CRSPdf, [:permno], lcumretx = :retxplus1 => x-> ShiftedArrays.lag(x))[:lcumretx]
+CRSPdf[:lcumretx] = by(CRSPdf, [:permno], lcumretx = :cumretx => x-> ShiftedArrays.lag(x))[:lcumretx]
 # lag market cap
 CRSPdf[:lme] = by(CRSPdf, [:permno], lme = :me => x-> ShiftedArrays.lag(x))[:lme]
 
 # if first permno then use me/(1+retx) to replace the missing value
-CRSPdf[:count] = by(CRSPdf, :permno, x1 = :permno => x -> running(length, x, length(x)))[:x1]
+CRSPdf[:count] = by(CRSPdf, :permno, x1 = :permno => x -> running(length, x, length(x)).-1 )[:x1]
 for row in 1:size(CRSPdf,1)
-    if CRSPdf[row, :count] == 1 # if first occurence of a stock (missing ME)
+    if CRSPdf[row, :count] == 0 # if first occurence of a stock (missing ME)
         CRSPdf[row, :lme] = CRSPdf[row,:me]/CRSPdf[row,:cumretx]
     end
 end
 delete!(CRSPdf, :count)
 
+
 # baseline me from which I will compute the drift in weight_port.
 # Since I rebalance at the end of june I start the drift of a new year in july
 mebase = CRSPdf[CRSPdf[:ffmonth] .== 1, :] # i.e. ==July
-mebase = mebase[:, [:permno, :ffyear, :lme]]
+mebase = mebase[[:permno, :ffyear, :lme]]
 names!(mebase, [:permno, :ffyear, :mebase])
 
 # merge result back together. :mebase contains the :me in July
@@ -188,13 +194,13 @@ crsp_jun = join(crsp_jun, decme, on=[:permno, :year], kind=:inner)
 #######################
 ccm = linktabledownload()
 # if linkenddt is missing then set to today date
-ccm[:linkenddt] = Missings.coalesce.(ccm[:linkenddt],Dates.Date(now())+Dates.Year(1))
-ccm[:linkdt] = Missings.coalesce.(ccm[:linkdt],minimum(ccm[:linkdt]))
+ccm[:linkenddt] = replace(ccm[:linkenddt], missing=>Dates.Date(now()))
+# ccm[:linkdt] = Missings.coalesce.(ccm[:linkdt],minimum(ccm[:linkdt]))
 #Link Compustat with link table (permno)
 ccm1=join(CSdf,ccm,kind=:left,on=[:gvkey])
 # Set all compustat observations to last day of following year's june
-ccm1[:yearend] = ceil.(ccm1[:datadate], Dates.Year) .- Dates.Day(1)
-ccm1[:jdate] = ceil.(ccm1[:yearend]+Dates.Month(6), Dates.Month) .- Dates.Day(1)
+ccm1[:yearend] = ceil.(ccm1[:datadate] .+ Dates.Day(1), Dates.Year) .- Dates.Day(1)
+ccm1[:jdate] = ceil.(ccm1[:yearend] .+ Dates.Month(6) .+ Dates.Day(1), Dates.Month) .- Dates.Day(1)
 
 # set link date bounds
 jdateInBounds = findall((replace(ccm1[:jdate].>=ccm1[:linkdt], missing=>false)) .& (replace(ccm1[:jdate].<=ccm1[:linkenddt], missing=>false)))
@@ -231,28 +237,25 @@ gvkeyToPermid = Dict(zip(noMissingMatch[:gvkey], noMissingMatch[:permid]))
 ccm3 = join(ccm2, noMissingMatch, kind=:left, on=[:gvkey])
 
 
-#### Merge june CRSP with Compustat for bucket creation ####
-ccm_jun = join(crsp_jun, ccm3, kind=:inner, on=[:permno, :jdate])
 
 ###########################
 # Breakpoints computation #
 ###########################
+
+#### Merge june CRSP with Compustat for bucket creation ####
+ccm_jun = join(crsp_jun, ccm3, kind=:inner, on=[:permno, :jdate])
 
 # Compute book-to-market ratio
 ccm_jun[:beme]=ccm_jun[:be] .* 1000 ./ ccm_jun[:dec_me]
 # histogram(windsorize(collect(skipmissing(ccm_jun[:beme])), 97, 0))
 # select NYSE stocks for bucket breakdown
 # exchcd = 1 and positive beme and positive me and shrcd in (10,11) and at least 2 years in comp
-ccm_jun[:posbm] = 0
-for row in eachrow(ccm_jun)
-    if !(ismissing(row[:beme])) && !(ismissing(row[:me])) && row[:beme]>0 && row[:me]>0
-        row[:posbm] = 1
-    end
-end
-nyse=ccm_jun[ccm_jun[:posbm].==1, :] # Removes ~10% of observations
-nyse=nyse[nyse[:exchcd].==1, :] # Removes ~60% of observations
+
+nyse=ccm_jun[ccm_jun[:exchcd].==1, :] # Removes ~60% of observations
 nyse=nyse[findall(x -> x in [10,11], nyse[:shrcd]), :] # Removes another ~10% of observations
-nyse=nyse[nyse[:count].>=2, :] # End up with ~20% of initial observations
+nyse=nyse[.!ismissing.(nyse[:beme]).>0, :]
+nyse=nyse[.!ismissing.(nyse[:me]).>0, :]
+nyse=nyse[nyse[:count].>2, :] # End up with ~20% of initial observations
 
 # Compute breakpoints by year
 nyse_size = by(nyse, [:jdate], nyse -> DataFrame(
@@ -278,43 +281,69 @@ nyse_bm = by(nyse, [:jdate], nyse -> DataFrame(
 sort!(nyse_bm, :jdate);sort!(nyse_size, :jdate)
 nyse_breaks = join(nyse_size, nyse_bm, kind=:inner, on=[:jdate])
 ccm_jun = join(ccm_jun, nyse_breaks, kind=:left, on=[:jdate])
-ccm_jun[:ranksize] = 0
-ccm_jun[:rankbm] = 0
+ccm_jun[:ranksize] = Array{Union{Missing,Int}}(undef, size(ccm_jun,1))
+ccm_jun[:rankbm] = Array{Union{Missing,Int}}(undef, size(ccm_jun,1))
 bmcols = [Symbol("bm$(i)") for i in 10:10:90]
 sizecols = [Symbol("size$(i)") for i in 10:10:90]
 for row in 1:size(ccm_jun,1)
     bmBPs = [ccm_jun[row,col] for col in bmcols]
     sizeBPs = [ccm_jun[row,col] for col in sizecols]
-    if !ismissing(ccm_jun[row,:beme]) && ccm_jun[row,:beme]!==NaN
-        ccm_jun[row, :rankbm] = assignBucket(ccm_jun[row,:beme], bmBPs)
+    if !ismissing(ccm_jun[row,:beme]) && ccm_jun[row,:beme]>0 && !ismissing(ccm_jun[row,:me]) && ccm_jun[row,:me]>0 && ccm_jun[row,:count]>=2
+        rankbm = assignBucket(ccm_jun[row,:beme], bmBPs)
+        if typeof(rankbm)==Int
+            ccm_jun[row, :rankbm] = rankbm
+        end
     end
-    if !ismissing(ccm_jun[row,:me]) && ccm_jun[row,:me]!==NaN
-        ccm_jun[row, :ranksize] = assignBucket(ccm_jun[row,:me], sizeBPs)
+    if !ismissing(ccm_jun[row,:beme]) && ccm_jun[row,:beme]>0 && !ismissing(ccm_jun[row,:me]) && ccm_jun[row,:me]>0 && ccm_jun[row,:count]>=2
+        ranksize = assignBucket(ccm_jun[row,:me], sizeBPs)
+        if typeof(ranksize)==Int
+            ccm_jun[row, :ranksize] = ranksize
+        end
     end
 end
+ccm_jun[1:6, [:permno, :date, :ffyear, :beme, :me, :be, :rankbm, :ranksize, :count]]
+
+# Recompute ffyear for match
+ccm_jun[:ffyear] = Dates.year.(ccm_jun[:jdate])
+
 # delete breakpoints and CRSP info columns
-delete!(ccm_jun, [bmcols;sizecols])
-delete!(ccm_jun, [:permco, :date, :shrcd, :exchcd, :ret, :retx, :prc, :vol, :spread,
-                  :jdate, :retadj, :me, :year,:month, :ffdate, :ffmonth, :retxplus1,
-                  :cumretx, :lcumretx, :lme, :mebase, :wt, :count])
+DataFrames.deletecols!(ccm_jun, [bmcols;sizecols])
+DataFrames.deletecols!(ccm_jun, [:permco, :date, :shrcd, :exchcd, :ret, :retx, :prc, :vol, :spread,
+                  :retadj, :me, :year,:month, :ffdate, :ffmonth, :retxplus1, :jdate,
+                  :cumretx, :lcumretx, :lme, :mebase, :wt])
 
 ##################################################
 # Merge yearly CS breakpoints with Monthly CRSP  #
 ##################################################
 
 monthlyMerge = join(CRSPdf, ccm_jun, kind=:left, on=[:permno, :ffyear])
-monthlyMerge[[:date, :ffdate, :ffmonth,:jdate, :ffyear, :datadate]]
+
+monthlyMerge[:posbm] = 0
+for row in eachrow(monthlyMerge)
+    if !(ismissing(row[:beme])) && !(ismissing(row[:me])) && row[:beme]>0 && row[:me]>0 && row[:count]>=2
+        row[:posbm] = 1
+    end
+end
+monthlyMerge = monthlyMerge[monthlyMerge[:posbm].==1, :]
+monthlyMerge = monthlyMerge[.!ismissing.(monthlyMerge[:wt]).>=1, :]
+monthlyMerge = monthlyMerge[.!ismissing.(monthlyMerge[:rankbm]), :]
+monthlyMerge=monthlyMerge[findall(x -> x in [10,11], monthlyMerge[:shrcd]), :]
+
+monthlyMerge[[:date, :permno, :rankbm,:ranksize, :ffyear, :beme, :jdate]][10:15,:]
+
 ymonth = []
 for (y,m) in zip(Dates.year.(monthlyMerge[:date]) ,Dates.month.(monthlyMerge[:date]))
     push!(ymonth, y*100+m)
 end
 monthlyMerge[:ymonth] = ymonth
 monthlyMerge = monthlyMerge[monthlyMerge[:date].>=truestart, :]
+monthlyMerge = monthlyMerge[monthlyMerge[:date].<=trueend, :]
 
 monthlyMerge = monthlyMerge[[:permno, :permid, :ymonth, :prc, :vol, :spread, :retadj, :me,
                              :wt, :conm, :at, :lt, :naicsh, :beme, :ranksize, :rankbm]]
 names!(monthlyMerge, [:permno, :permid, :ymonth, :prcM, :volM, :spreadM, :retadjM, :meM,
                       :wt, :conm, :atY, :ltY, :naicshY, :bemeY, :ranksize, :rankbm])
+
 
 ##########################################
 # Merge daily MongoDB with monthly data  #
@@ -327,7 +356,7 @@ collection = database["PermnoDay"]
 for row in 1:size(monthlyMerge,1)
 
     # Show advancement
-    if row in 15000:15000:size(monthlyMerge,1)
+    if row in 10000:10000:size(monthlyMerge,1)
         print("Advnacement : ~$(round(100*row/size(monthlyMerge,1)))% \n")
     end
 
@@ -348,7 +377,7 @@ for row in 1:size(monthlyMerge,1)
     # Create selector and updator dictionaries
     setDict = Dict(zip([string(x) for x in names(crtrow)], Matrix(crtrow)))
     selectDict = [Dict("permno"=>setDict["permno"]), Dict("ymonth"=>setDict["ymonth"])]
-    DataFrames.deletecols!(setDict, ["permno", "ymonth"])
+    delete!(setDict, ["permno", "ymonth"])
 
     # Update all matching in MongoDB
     crtselector = Mongoc.BSON(Dict("\$and" => selectDict))

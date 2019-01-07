@@ -135,17 +135,17 @@ that topic (false).
 top1 is the "stonger" conditioning if top1, top2 and top3 are provided given the
 ordering of abjoin and bcjoin
 """
-function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=false, abjoin=&, bcjoin=&)
+function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=false, abjoin=&, bcjoin=&, relthresh=0.9)
     stCount = 0
     posSum = 0
     negSum = 0
     for i in 1:length(permnoday)
         if top1==() && top2==() && top3==()
-            if typeof(novFilter)==Bool && !novFilter
+            if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                 stCount+=1
                 posSum+=permnoday[i]["sentimentPositive"]
                 negSum+=permnoday[i]["sentimentNegative"]
-            elseif permnoday[i][novFilter[1]]<=novFilter[2]
+            elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                 stCount+=1
                 posSum+=permnoday[i]["sentimentPositive"]
                 negSum+=permnoday[i]["sentimentNegative"]
@@ -159,11 +159,11 @@ function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=fals
                 topicCond = a(top1[1], permnoday[i]["topics"])
             end
             if topicCond
-                if typeof(novFilter)==Bool && !novFilter
+                if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
                     posSum+=permnoday[i]["sentimentPositive"]
                     negSum+=permnoday[i]["sentimentNegative"]
-                elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
                     posSum+=permnoday[i]["sentimentPositive"]
                     negSum+=permnoday[i]["sentimentNegative"]
@@ -184,11 +184,11 @@ function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=fals
             end
 
             if topicCond
-                if typeof(novFilter)==Bool && !novFilter
+                if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
                     posSum+=permnoday[i]["sentimentPositive"]
                     negSum+=permnoday[i]["sentimentNegative"]
-                elseif permnoday[i][novFilter[1]]<=novFilter[2]
+                elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
                     posSum+=permnoday[i]["sentimentPositive"]
                     negSum+=permnoday[i]["sentimentNegative"]

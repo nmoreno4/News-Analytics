@@ -1,7 +1,7 @@
 module FindFcts
 using DataFrames
 
-export isin_IDX, notIn, isin_IDX_old, filterSubDfSum
+export isin_IDX, notIn, isin_IDX_old, filterSubDfSum, deleteMissingRows
 
 
 
@@ -153,6 +153,20 @@ end
 function notIn(notin::AbstractArray, onlyin::AbstractArray)
     return filter(x -> x ∉ notin, onlyin)
 end
+
+
+"""
+First argument is the DataFrame.
+All following arguments are colums where to look for missing values.
+Delete the whole row if one of the columns has a missing value.
+"""
+function deleteMissingRows(xdf, vCol...)
+    for col in vCol
+        xdf = xdf[findall(.!ismissing.(xdf[col])),:]
+    end
+    return xdf
+end
+
 
 
 end #module

@@ -1,4 +1,4 @@
-using WRDSdownload, DataFrames, Dates, StatsBase, TimeZones
+using WRDSdownload, DataFrames, Dates, StatsBase, TimeZones, Windsorize
 
 
 CRSPdaterange = ["01/01/2003", "12/31/2017"]
@@ -27,7 +27,7 @@ CRSPdaterange = ["01/01/2003", "12/31/2017"]
 ########################################################
 
 print("Downloading daily data!...")
-CRSPvariables = "a.permno, a.date,a.ret, a.vol, a.prc"
+CRSPvariables = "a.permno, a.date,a.ret, a.vol, a.prc, a.shrout"
 CRSPdatatable = ["crsp.dsf", "crsp.dsenames"]
 CRSPdf = @time CRSPdownload(CRSPdaterange, CRSPvariables, CRSPdatatable)
 print("Data downloaded!")
@@ -44,8 +44,9 @@ CRSPdf[:retadj]=(1 .+ CRSPdf[:ret]) .* (1 .+ CRSPdf[:dlret]) .- 1
 # Compute trading volume as number of shares sold * share price
 CRSPdf[:prc] = abs.(CRSPdf[:prc])
 CRSPdf[:volume]=CRSPdf[:vol] .* CRSPdf[:prc]
+CRSPdf[:me]=abs.(CRSPdf[:prc] .* CRSPdf[:shrout])
 
-CRSPdf[:retadj][i] = windsorize(CRSPdf[:retadj], 99.9, 0.01)
+CRSPdf[:retadj] = windsorize(CRSPdf[:retadj], 99.9, 0.01)
 
 # Compute date-frequency identifiers
 ys = Dates.year.(CRSPdf[:date])
@@ -79,7 +80,7 @@ CRSPdf[:td] = 0
 for row in 1:size(CRSPdf[:date],1)
     CRSPdf[:td][row] = sortedDaysDict[CRSPdf[:date][row]]
 end
-DataFrames.deletecols!(CRSPdf, [:ret, :vol, :dlret])
+DataFrames.deletecols!(CRSPdf, [:ret, :vol, :dlret, :shrout])
 
 
 using Mongoc, Dates, JSON
@@ -96,4 +97,33 @@ collection = database["PermnoDay"]
         end
     end
     result = push!(collection, Mongoc.BSON(document))
+end
+
+
+
+
+############################################################
+# This part only if you wish to update a specific variable #
+############################################################
+varToUpdate = :me
+
+using Mongoc, Dates, JSON
+client = Mongoc.Client()
+database = client["Dec2018"]
+collection = database["PermnoDay"]
+
+CRSPdfUpdate = CRSPdf[[:permno, :date, varToUpdate]]
+CRSPdfUpdate = CRSPdfUpdate[.!ismissing.(CRSPdfUpdate[varToUpdate]),:]
+
+for row in 1:size(CRSPdfUpdate,1)
+    # Show advancement
+    if row in 100000:100000:size(CRSPdfUpdate,1)
+        print("Advnacement : ~$(round(100*row/size(CRSPdfUpdate,1)))% \n")
+    end
+
+    setDict = Dict("$varToUpdate"=>CRSPdfUpdate[row,varToUpdate])
+    selectDict = [Dict("date"=>CRSPdfUpdate[row,:date]), Dict("permno"=>CRSPdfUpdate[row,:permno])]
+    crtselector = Mongoc.BSON(Dict("\$and" => selectDict))
+    crtupdate = Mongoc.BSON(Dict("\$set"=>setDict))
+    Mongoc.update_many(collection, crtselector, crtupdate)
 end
