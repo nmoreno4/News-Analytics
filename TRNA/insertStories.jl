@@ -7,7 +7,7 @@ using JSON, JLD2, Dates, ReadReuters, Statistics, StatsBase, Buckets, DBstats, M
 offsetNewsDay = Dates.Minute(15)
 datef = DateFormat("y-m-dTH:M:S.sZ");
 recomputeUniqueTDs = false
-ystart, yend = 2017,2017
+ystart, yend = 2003,2003
 insertOnlyAna = true
 ####################################
 

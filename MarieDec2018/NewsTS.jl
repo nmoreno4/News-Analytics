@@ -1,52 +1,139 @@
 using QueryMongo, DataFrames, Dates, TSmanip, Wfcts, LoadFF, Statistics, JLD2,
-      TSmap, Plots, CSV, TrendCycle, Misc
+      TSmap, Plots, CSV, TrendCycle, Misc, FindFcts
 
-iArrays = [Int[], DateTime[], Union{Float64, Missing}[], Union{Float64, Missing}[]]
-RetMat = gatherData((1,3776), ["permno", "date", "retadj", "me"], iArrays)
+iArrays = [Int[], DateTime[], Union{Float64, Missing}[],
+           Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
+           Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
+           Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[]]
+vars = ["permno", "date", "me", "nS_nov12H_0", "posSum_nov12H_0", "negSum_nov12H_0",
+        "nS_RES_inc_RESF_excl_nov12H_0", "posSum_RES_inc_RESF_excl_nov12H_0", "negSum_RES_inc_RESF_excl_nov12H_0",
+        "nS_RESF_inc_nov12H_0", "posSum_RESF_inc_nov12H_0", "negSum_RESF_inc_nov12H_0"]
+NSMat = @time gatherData((1,3776), vars, iArrays)
+
+# @time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/NS_FF_all_3.jld2" NSMat
+@time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/NS_FF_all_3.jld2" NSMat
 
 
+#####################################################
+# Compute NS based on drifted weights (second step) #
+#####################################################
+NS_TS = Dict()
+portfolios = ["BV", "SV", "BG", "SG", "ALL"]
+for ptf in portfolios
+    print("Current portfolio: $ptf \n")
+    crtdf = NSMat[ptf]
+    newsTopics = ([:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0],
+                   [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0],
+                   [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0])
+    t = 0
+    tops = ["all", "RES", "RESF"]
 
-szvar = "ranksize" #sizedecile ranksize
-bmvar = "rankbm" #bmdecile rankbm
-wt = :wt
-filters = Dict( "tdF" => ["td", tdrange],
-                "BigF" => [szvar, (6,10)],
-                "SmallF" => [szvar, (1,5)],
-                "GrowthF" => [bmvar, (1,3)],
-                "ValueF" => [bmvar, (8,10)],
-                "SizeA" => [szvar, (1,10)],
-                "ValueA" => [bmvar, (1,10)] )
+    for nTopic in newsTopics
+        t+=1
+        print("Current topic: $(tops[t]) \n")
+        dayNS = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
+        weekNS = aggNewsByPeriod(weekID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
+        monthNS = aggNewsByPeriod(monthID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
+        quarterNS = aggNewsByPeriod(quarterID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
 
-raw = Dict()
-VWts = Dict()
-cc = [1]
-ptfnames = ["BG", "BV", "SG", "SV", "ALL"]
-ptfs = [("tdF", "BigF", "GrowthF")]#, ("tdF", "BigF", "ValueF"), ("tdF", "SmallF", "GrowthF"), ("tdF", "SmallF", "ValueF"), ("tdF", "SizeA", "ValueA")]
-testQuery()
-@time for ptf in ptfs
-    # retvals = ["permno", "date", "me", "negSum_nov12H_0", "posSum_nov12H_0", "nS_nov12H_0", "retadj",
-    #             "negSum_RES_inc_RESF_excl_nov12H_0", "posSum_RES_inc_RESF_excl_nov12H_0",
-    #             "nS_RES_inc_RESF_excl_nov12H_0", "negSum_RESF_inc_nov12H_0", "posSum_RESF_inc_nov12H_0",
-    #             "nS_RESF_inc_nov12H_0"]
-    # iniArrays = [Int[], DateTime[], Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
-    #               Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
-    #               Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
-    #               Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[]]
-    retvals = ["permno", "date", "me", "wt", "retadj"]
-    iniArrays = [Int[], DateTime[], Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[]]
+        dayNS[:dailyRebal] = @time rebalPeriods(dayNS, :perID; rebalPer=(dayofmonth, 1:32) )
+        weekNS[:dailyRebal] = rebalPeriods(weekNS, :perID; rebalPer=(dayofmonth, 1:32) )
+        monthNS[:dailyRebal] = rebalPeriods(monthNS, :perID; rebalPer=(dayofmonth, 1:32) )
+        quarterNS[:dailyRebal] = rebalPeriods(quarterNS, :perID; rebalPer=(dayofmonth, 1:32) )
 
-    if length(ptf)==3
-        f1 = deepcopy(filters[ptf[1]])
-        f2 = deepcopy(filters[ptf[2]])
-        f3 = deepcopy(filters[ptf[3]])
-        raw[ptfnames[cc[1]]] = @time queryDF(retvals, iniArrays, f1, f2, f3)
-    elseif length(ptf)==1
-        f1 = deepcopy(filters[ptf[1]])
-        raw[ptfnames[cc[1]]] = @time queryDF(retvals, iniArrays, f1)
+        for WS in ["EW", "VW"]
+            dayNS[:driftW] = @time driftWeights(dayNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
+            weekNS[:driftW] = driftWeights(weekNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
+            monthNS[:driftW] = driftWeights(monthNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
+            quarterNS[:driftW] = driftWeights(quarterNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
+
+            NS1 = sort(varWeighter(dayNS, :NS, :perID, :driftW), :perID)
+            NS2 = sort(varWeighter(weekNS, :NS, :perID, :driftW), :perID)
+            NS3 = sort(varWeighter(monthNS, :NS, :perID, :driftW), :perID)
+            NS4 = sort(varWeighter(quarterNS, :NS, :perID, :driftW), :perID)
+
+            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_day.csv", NS1)
+            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_week.csv", NS2)
+            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_month.csv", NS3)
+            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_quarter.csv", NS4)
+
+            NS_TS["$(ptf)_$(tops[t])_$(WS)_day"] = NS1
+            NS_TS["$(ptf)_$(tops[t])_$(WS)_week"] = NS2
+            NS_TS["$(ptf)_$(tops[t])_$(WS)_month"] = NS3
+            NS_TS["$(ptf)_$(tops[t])_$(WS)_quarter"] = NS4
+        end
     end
-    # VWts[ptfnames[cc[1]]] = @time FFweighting(raw[ptfnames[cc[1]]], :date, wt, :retadj)
-    cc[1]+=1
 end
+
+# JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/NS_TS.jld2" NS_TS
+@time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/NS_TS.jld2"
+
+crtDF = deleteMissingRows(NS_TS["ALL_RES_VW_week"], :NS)
+H = 2:20
+P = 2:12
+Res = Array{Float64}(undef, H[end], P[end]).*NaN
+for h in H
+    print(h)
+    for p in P
+        if h>p
+            Hfilter, reg = neverHPfilter(crtDF, h, p)
+            Res[h,p] = reg[:aic]
+        end
+    end
+end
+heatmap(Res)
+Hfilter, reg  = neverHPfilter(crtDF, 12, 8)
+reg[:aic]
+Hfilter = deleteMissingRows(Hfilter, :x_trend)
+plot(Hfilter[:date], [Hfilter[:x_cycle],Hfilter[:x_trend]], ylims=(minimum(convert(Matrix,Hfilter[:,[:x, :x_trend, :x_cycle]])),maximum(convert(Matrix,Hfilter[:,[:x, :x_trend, :x_cycle]]))), linewidth = 2)
+
+
+hpFilter = HPfilter(convert(Array{Float64}, crtDF[:,:NS]), 14400)
+plot(hpFilter)
+Hfilter, reg = neverHPfilter(DataFrame(Dict(:NS=>hpFilter,:perID=>crtDF[:,:perID])), 48, 36)
+plot(collect(skipmissing(Hfilter[:,:x])), ylims=(minimum(skipmissing(Hfilter[:,:x])),maximum(skipmissing(Hfilter[:,:x]))))
+plot(collect(skipmissing(Hfilter[:,:x_trend])), ylims=(minimum(skipmissing(Hfilter[:,:x])),maximum(skipmissing(Hfilter[:,:x]))))
+plot!(collect(skipmissing(Hfilter[:,:x_cycle])), ylims=(minimum(skipmissing(Hfilter[:,:x])),maximum(skipmissing(Hfilter[:,:x]))))
+plot!(collect(skipmissing(Hfilter[:,:x_random])), ylims=(minimum(skipmissing(Hfilter[:,:x])),maximum(skipmissing(Hfilter[:,:x]))), color=:black)
+
+
+reg[:aic]
+for i in keys(reg)
+    print("$i \n")
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 crtdf = raw["BG"]
@@ -104,50 +191,7 @@ plot(ret2tick(weekFreq[:aggRet]))
 
 
 
-#####################################################
-# Compute NS based on drifted weights (second step) #
-#####################################################
-portfolios = ["BV", "SV", "BG", "SG", "ALL"]
-for ptf in portfolios
-    print("Current portfolio: $ptf \n")
-    crtdf = raw[ptf]
-    newsTopics = ([:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0],
-                   [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0],
-                   [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0])
-    t = 0
-    tops = ["all", "RES", "RESF"]
 
-    for nTopic in newsTopics
-        t+=1
-        print("Current topic: $(tops[t]) \n")
-        dayNS = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
-        weekNS = aggNewsByPeriod(weekID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
-        monthNS = aggNewsByPeriod(monthID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
-        quarterNS = aggNewsByPeriod(quarterID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)
-
-        dayNS[:dailyRebal] = @time rebalPeriods(dayNS, :perID; rebalPer=(dayofmonth, 1:32) )
-        weekNS[:dailyRebal] = rebalPeriods(weekNS, :perID; rebalPer=(dayofmonth, 1:32) )
-        monthNS[:dailyRebal] = rebalPeriods(monthNS, :perID; rebalPer=(dayofmonth, 1:32) )
-        quarterNS[:dailyRebal] = rebalPeriods(quarterNS, :perID; rebalPer=(dayofmonth, 1:32) )
-
-        for WS in ["EW", "VW"]
-            dayNS[:driftW] = @time driftWeights(dayNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
-            weekNS[:driftW] = driftWeights(weekNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
-            monthNS[:driftW] = driftWeights(monthNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
-            quarterNS[:driftW] = driftWeights(quarterNS, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
-
-            NS1 = sort(varWeighter(dayNS, :NS, :perID, :driftW), :perID)
-            NS2 = sort(varWeighter(weekNS, :NS, :perID, :driftW), :perID)
-            NS3 = sort(varWeighter(monthNS, :NS, :perID, :driftW), :perID)
-            NS4 = sort(varWeighter(quarterNS, :NS, :perID, :driftW), :perID)
-
-            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_day.csv", NS1)
-            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_week.csv", NS2)
-            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_month.csv", NS3)
-            CSV.write("/home/nicolas/Data/TS/NS/$(ptf)_$(tops[t])_$(WS)_quarter.csv", NS4)
-        end
-    end
-end
 
 # NS1 = sort(deleteMissingRows(NS1, :NS), :perID)
 # NS2 = sort(deleteMissingRows(NS2, :NS), :perID)
@@ -169,7 +213,7 @@ ptf = portfolios[1]
 newsTopics = ([:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0],
                [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0],
                [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0])
-crtdf = raw[ptf]
+crtdf = NSMat[ptf]
 nTopic = newsTopics[1]
 crtdf[:NS_all] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
 nTopic = newsTopics[2]
@@ -186,6 +230,58 @@ crtdf[:driftW] = @time driftWeights(crtdf, WS, rebalCol=:dailyRebal, meCol=:me, 
 LTspan = 60
 STspan = 5
 iS = 1 # interval span for rolling window (default 1 = every day)
-a = @time NSsuprise(LTspan, STspan, iS, newsTopics)
-b = a[a[:permno].==93422,:NSsurp]
-plot(collect(skipmissing(b)))
+a = @time NSsuprise2(crtdf, LTspan, STspan, iS, newsTopics)
+b = @time NSsuprise2(crtdf, LTspan, STspan, 4, newsTopics)
+
+Nsurp = sort(varWeighter(b, :NSsurp, :date, :driftW), :date)
+Nsurp = deleteMissingRows(Nsurp, :NSsurp)
+plot(Nsurp[:date], Nsurp[:NSsurp])
+
+using RCall
+TS, X = Nsurp[:date], Nsurp[:NSsurp]
+@rput TS; @rput X
+R"""
+library(xts)
+M = xts(X, order.by = TS)
+plot(M)
+"""
+
+
+for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
+    print("\n $j $k \n")
+end
+
+"""
+TO-DO: Implement a version where instead of looking x observations back I look x "DAYS" back
+"""
+function NSsuprise2(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW, dateCol=:date)
+    topicLT = newsTopics[1]
+    topicST = newsTopics[2]
+    keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
+    res = by(crtdf, [:permno]) do xdf
+        res = Dict()
+        T = size(xdf,1) #Total number of observations
+        nbObs = length(1:iS:(T-(LTspan+STspan)+1))
+        if nbObs>0
+            NSsurp = zeros(nbObs)
+            cc=0
+            for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
+                cc+=1
+                LTdf = xdf[(j:(k-1)), :]
+                LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
+                STdf = xdf[(k:(k+STspan-1)), :]
+                STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
+                NSsurp[cc] = LTNS-STNS
+            end
+            res[:NSsurp] = replace(NSsurp, NaN=>missing)
+            res[:date] = xdf[(LTspan+STspan):iS:T, :date]
+            res[wCol] = xdf[(LTspan+STspan):iS:T, wCol]
+        else
+            res[:NSsurp] = missing
+            res[:date] = missing
+            res[wCol] = missing
+        end
+        DataFrame(res)
+    end
+    return deleteMissingRows(res, :date)
+end

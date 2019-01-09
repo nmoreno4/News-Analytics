@@ -100,13 +100,13 @@ end
 """
 TO-DO: Implement a version where instead of looking x observations back I look x "DAYS" back
 """
-function NSsuprise(LTspan, STspan, iS, newsTopics, wCol=:driftW)
+function NSsuprise(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW)
     topicLT = newsTopics[1]
     topicST = newsTopics[2]
     res = by(crtdf, [:permno]) do xdf
         res = Dict()
         T = size(xdf,1) #Total number of observations
-        nbObs = T-(LTspan+STspan)+1
+        nbObs = length(1:iS:(T-(LTspan+STspan)+1))
         if nbObs>0
             NSsurp = zeros(nbObs)
             for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
