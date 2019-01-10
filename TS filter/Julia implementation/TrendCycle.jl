@@ -16,7 +16,7 @@ function HPfilter(y::Vector{Float64}, lambda::Number)
     return D\y
 end
 
-function neverHPfilter(NSdf, h, p, dateCol=:perID, varCol=:NS)
+function neverHPfilter(NSdf, h, p; dateCol=:perID, varCol=:NS)
     NSdf = deleteMissingRows(NSdf, varCol)
     idx = Dates.Date.(NSdf[:,dateCol])
     NS = NSdf[:,varCol]

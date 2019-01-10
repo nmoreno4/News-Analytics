@@ -61,3 +61,9 @@ plot(gdp_filter$GDPC1.trend)
 plot(gdp_filter$GDPC1.random)
 gdp_reg <- yth_glm(GDPC1, h = 8, p = 2)
 summary(gdp_reg)
+
+
+if (2==2){
+  print("hey")
+}
+

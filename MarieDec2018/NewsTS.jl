@@ -1,5 +1,5 @@
 using QueryMongo, DataFrames, Dates, TSmanip, Wfcts, LoadFF, Statistics, JLD2,
-      TSmap, Plots, CSV, TrendCycle, Misc, FindFcts
+      TSmap, Plots, CSV, TrendCycle, Misc, FindFcts, DataStructures
 
 iArrays = [Int[], DateTime[], Union{Float64, Missing}[],
            Union{Float64, Missing}[], Union{Float64, Missing}[], Union{Float64, Missing}[],
@@ -68,6 +68,84 @@ end
 # JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/NS_TS.jld2" NS_TS
 @time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/NS_TS.jld2"
 
+
+
+
+#######################
+# Compute NS surprise #
+#######################
+
+Nsurp_TS = Dict()
+portfolios = ["BV", "SV", "BG", "SG", "ALL"]
+
+ALL = [:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0]
+RES = [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0]
+RESF = [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0]
+#### The below specs must NOT change for accountability of filename!! ######
+newsTopics = [(RESF,RES), (ALL,RES), (RESF,RES), (ALL,RES), (ALL,RES), (RESF,RES)]
+LTspan = [Dates.Month(3), Dates.Month(3), Dates.Month(1), Dates.Month(1), Dates.Month(6), Dates.Month(6)]
+STspan = [Dates.Week(1), Dates.Week(1), Dates.Day(1), Dates.Day(1), Dates.Month(1), Dates.Week(2)]
+minLT, minST, iS = [20, 20,10,10,20,20],[1,1,1,1,10,3],[1,1,1,1,20,1]
+specs = 6:length(LTspan) # change here if you want to add further specs
+
+@time for ptf in portfolios
+    print("Crt ptf: $ptf \n")
+    crtdf = NSMat[ptf]
+    nTopic = ALL
+    crtdf[:NS_all] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
+    nTopic = RES
+    crtdf[:NS_RES] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
+    nTopic = RESF
+    crtdf[:NS_RESF] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
+
+    crtdf[:dailyRebal] = @time rebalPeriods(crtdf, :perID; rebalPer=(dayofmonth, 1:32) )
+
+    @time for WS in ["VW"]
+        crtdf[:driftW] = @time driftWeights(crtdf, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
+
+        @time for spec in specs
+            print("Crt spec: $spec \n")
+            b = @time NSsuprise(crtdf, LTspan[spec],  STspan[spec], minLT[spec], minST[spec], iS[spec], newsTopics[spec])
+            Nsurp = sort(varWeighter(b, :Nsurp, :date, :driftW), :date)
+            Nsurp = deleteMissingRows(Nsurp, :Nsurp)
+            CSV.write("/home/nicolas/Data/TS/Nsurp/$(ptf)_$(spec)_$(WS).csv", Nsurp)
+
+            Nsurp_TS["$(ptf)_$(spec)_$(WS)"] = Nsurp
+        end
+    end
+end
+Nsurp_TS6 = copy(Nsurp_TS)
+JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/Nsurp_TS6.jld2" Nsurp_TS6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+########################
+###### FIltering #######
+########################
 crtDF = deleteMissingRows(NS_TS["ALL_RES_VW_week"], :NS)
 H = 2:20
 P = 2:12
@@ -208,17 +286,22 @@ HPfilter(y::Vector{Float64}, lambda::Float64)
 #######################
 # Compute NS surprise #
 #######################
+LTspan = Dates.Month(3)
+STspan = Dates.Day(3)
+minLT, minST, iS = 20,1,1
 portfolios = ["BV", "SV", "BG", "SG", "ALL"]
 ptf = portfolios[1]
-newsTopics = ([:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0],
-               [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0],
-               [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0])
+ALL = [:nS_nov12H_0, :posSum_nov12H_0, :negSum_nov12H_0]
+RES = [:nS_RES_inc_RESF_excl_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0]
+RESF = [:nS_RESF_inc_nov12H_0, :posSum_RESF_inc_nov12H_0, :negSum_RESF_inc_nov12H_0]
+newsTopics = [RESF,RES]
+
 crtdf = NSMat[ptf]
-nTopic = newsTopics[1]
+nTopic = ALL
 crtdf[:NS_all] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
-nTopic = newsTopics[2]
+nTopic = RES
 crtdf[:NS_RES] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
-nTopic = newsTopics[3]
+nTopic = RESF
 crtdf[:NS_RESF] = @time aggNewsByPeriod(dayID, crtdf, nTopic[1], nTopic[2], nTopic[3], :me)[:NS]
 
 crtdf[:dailyRebal] = @time rebalPeriods(crtdf, :perID; rebalPer=(dayofmonth, 1:32) )
@@ -226,62 +309,29 @@ crtdf[:dailyRebal] = @time rebalPeriods(crtdf, :perID; rebalPer=(dayofmonth, 1:3
 WS = "VW"
 crtdf[:driftW] = @time driftWeights(crtdf, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:perID, NS=true)
 
-# News surprise
-LTspan = 60
-STspan = 5
-iS = 1 # interval span for rolling window (default 1 = every day)
-a = @time NSsuprise2(crtdf, LTspan, STspan, iS, newsTopics)
-b = @time NSsuprise2(crtdf, LTspan, STspan, 4, newsTopics)
+b = @time NSsuprise(crtdf, Dates.Month(3),  Dates.Week(2), 10, 3, 10, newsTopics)
+Nsurp = sort(varWeighter(b, :Nsurp, :date, :driftW), :date)
+Nsurp = deleteMissingRows(Nsurp, :Nsurp)
+CSV.write("/home/nicolas/Data/TS/Nsurp/$(ptf)_$(tops[t])_$(WS)_quarter.csv", Nsurp)
 
-Nsurp = sort(varWeighter(b, :NSsurp, :date, :driftW), :date)
-Nsurp = deleteMissingRows(Nsurp, :NSsurp)
+
+# News surprise
+
+a = @time NSsuprise2(crtdf, LTspan, STspan, iS, newsTopics)
+
+b = @time NSsuprise2(crtdf, Dates.Month(3),  Dates.Week(2), 10, 3, 10, newsTopics)
+
+Nsurp = sort(varWeighter(b, :Nsurp, :date, :driftW), :date)
+Nsurp = deleteMissingRows(Nsurp, :Nsurp)
 plot(Nsurp[:date], Nsurp[:NSsurp])
 
 using RCall
-TS, X = Nsurp[:date], Nsurp[:NSsurp]
-@rput TS; @rput X
+TS, X = Nsurp[:date], Nsurp[:Nsurp]
+@rput TS; @rput X; @rput Y
 R"""
 library(xts)
-M = xts(X, order.by = TS)
+M = xts(Y, order.by = TS)
 plot(M)
 """
 
-
-for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
-    print("\n $j $k \n")
-end
-
-"""
-TO-DO: Implement a version where instead of looking x observations back I look x "DAYS" back
-"""
-function NSsuprise2(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW, dateCol=:date)
-    topicLT = newsTopics[1]
-    topicST = newsTopics[2]
-    keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
-    res = by(crtdf, [:permno]) do xdf
-        res = Dict()
-        T = size(xdf,1) #Total number of observations
-        nbObs = length(1:iS:(T-(LTspan+STspan)+1))
-        if nbObs>0
-            NSsurp = zeros(nbObs)
-            cc=0
-            for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
-                cc+=1
-                LTdf = xdf[(j:(k-1)), :]
-                LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
-                STdf = xdf[(k:(k+STspan-1)), :]
-                STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
-                NSsurp[cc] = LTNS-STNS
-            end
-            res[:NSsurp] = replace(NSsurp, NaN=>missing)
-            res[:date] = xdf[(LTspan+STspan):iS:T, :date]
-            res[wCol] = xdf[(LTspan+STspan):iS:T, wCol]
-        else
-            res[:NSsurp] = missing
-            res[:date] = missing
-            res[wCol] = missing
-        end
-        DataFrame(res)
-    end
-    return deleteMissingRows(res, :date)
-end
+Y = HPfilter(collect(skipmissing(X)), 1400)

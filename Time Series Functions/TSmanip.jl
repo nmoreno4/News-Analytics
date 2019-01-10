@@ -1,6 +1,6 @@
 module TSmanip
 
-using TSmap, DataFrames, Statistics, StatsBase, FindFcts
+using TSmap, DataFrames, Statistics, StatsBase, FindFcts, DataStructures, Dates
 export ret2tick, cumret2, cumret, aggRetByPeriod, aggNewsByPeriod, NSsuprise, computeNS
 
 function ret2tick(vec::AbstractArray, val=100 ; ignoremissing=false, dropinception=false)
@@ -96,11 +96,58 @@ function aggNewsByPeriod(perFct, crtdf, totNews, posNews, negNews, meCol, dateCo
 end
 
 
+function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:driftW, dateCol=:date)
+    sort!(crtdf, [:permno, dateCol])
+    topicLT = newsTopics[1]
+    topicST = newsTopics[2]
+    keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
+    res = by(crtdf, [:permno]) do xdf
+        res = Dict()
+        finaldatesIdxs = Int[]
+        perIdxs = OrderedDict(zip(keyDates, [Dict("LT"=>Int[], "ST"=>Int[]) for i in 1:length(keyDates)]))
+        for row in 1:size(xdf,1)
+            for kD in keyDates
+                if xdf[row,:date]<kD-STspan && xdf[row,:date]>kD-LTspan
+                    push!(perIdxs[kD]["LT"], row)
+                elseif xdf[row,:date]<=kD && xdf[row,:date]>=kD-STspan
+                    push!(perIdxs[kD]["ST"], row)
+                end
+            end
+        end
+
+        Nsurp = Union{Missing,Float64}[]
+        #find end per keys
+        for (d, idxs) in perIdxs
+            if length(idxs["LT"])>=minLT && length(idxs["ST"])>=minST
+                push!(finaldatesIdxs, idxs["ST"][end])
+                LTdf = xdf[idxs["LT"], :]
+                LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
+                STdf = xdf[idxs["ST"], :]
+                STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
+                push!(Nsurp, LTNS-STNS)
+            end
+        end
+        if length(finaldatesIdxs)>0
+            res[:Nsurp] = replace(Nsurp, NaN=>missing)
+            res[:date] = xdf[finaldatesIdxs, dateCol]
+            res[wCol] = xdf[finaldatesIdxs, wCol]
+        else
+            res[:Nsurp] = missing
+            res[:date] = missing
+            res[wCol] = missing
+        end
+        DataFrame(res)
+    end
+    return res
+end
+
+
+
 
 """
-TO-DO: Implement a version where instead of looking x observations back I look x "DAYS" back
+old version
 """
-function NSsuprise(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW)
+function NSsupriseOLD(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW)
     topicLT = newsTopics[1]
     topicST = newsTopics[2]
     res = by(crtdf, [:permno]) do xdf
