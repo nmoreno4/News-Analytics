@@ -1,4 +1,4 @@
-using CSV, JLD2, TrendCycle, FindFcts, Plots, DataFrames, Dates, DSP, Statistics
+using CSV, JLD2, TrendCycle, FindFcts, Plots, DataFrames, Dates, DSP, Statistics, Causality
 
 @time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/NS_TS.jld2"
 @time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/Nsurp_TS.jld2"
@@ -71,7 +71,6 @@ P = [2,3,4,6,12,24,36]
 function appendData()
     newData = deepcopy(Data)
     for crtvar in names(Data)[2:end]
-        print(typeof(Data))
         try
             crtNS = deleteMissingRows(Data, Symbol(crtvar))
             crtfilt, reg = neverHPfilter(crtNS, 24, 12; dateCol=:DATE, varCol=Symbol(crtvar))
@@ -101,7 +100,7 @@ function appendData()
             names!(crtfilt, [[:DATE];[Symbol("$(crtvar)_$x") for x in names(crtfilt)[2:end]]])
             newData = join(newData, crtfilt, on=:DATE, kind=:left)
 
-            png(trendplot, "/home/nicolas/Data/Results/Trend and Cyclicality filtering/$(crtvar)_trend.png")
+            # png(trendplot, "/home/nicolas/Data/Results/Trend and Cyclicality filtering/$(crtvar)_trend.png")
             # hp_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:hp])).power
             # trend_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:x_trend])).power
             # x_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:x])).power
@@ -118,15 +117,61 @@ end
 
 newData = appendData()
 
+newsvars = [:Surp_HML_1_x_trend, :Surp_HML_1, :Surp_HML_2, :Surp_HML_3, :Surp_HML_4, :ALL_all_VW_month,
+            :HML_all_VW_month, :Val_all_VW_month, :Gro_all_VW_month,
+            :Surp_Val_1, :Surp_Val_4,:Surp_Gro_1, :Surp_Gro_4]
+macrovars = [:AAA, :AMBSL, :BAA10YM, :BAA, :cefd, :consdur, :consnon,
+             :consserv, :CPIAUCSL, :cpi, :CSUSHPINSA, :employ, :FEDFUNDS,
+             :G_corpr, :G_CRSP_SPvw, :G_CRSP_SPvwx, :G_D12, :G_E12, :G_infl,
+             :G_ltr, :G_lty, :G_ntis, :GS1, :GS10, :G_svar, :G_tbl, :indpro,
+             :INTDSRUSM193N, :MCOILBRENTEU, :MCOILWTICO, :MTSDS133FMS, :nipo,
+             :PAYEMS, :PCEPI, :PCE, :pdnd, :PPIACO, :recess, :RECPROUSM156N,
+             :ripo, :SENT_orth, :SENT, :SPCS20RSA, :s, :T5YIFRM, :T10Y2YM,
+             :UNRATE, :USREC]
+thresh = 0.01
+causalMat = Array{Float64}(undef,length(macrovars), length(newsvars)) .* NaN
+newsvars = [:Surp_HML_1] ; macrovars = [:G_E12]
+for i in 1:length(newsvars)
+    for j in 1:length(macrovars)
+        crtDF = newData[[:DATE, newsvars[i], macrovars[j]]]
+        crtDF = deleteMissingRows(crtDF, newsvars[i], macrovars[j])
+        for col in names(crtDF)[2:end]
+            crtDF[col] = convert(Array{Float64}, crtDF[col])
+        end
+        try
+            A = grangerVARCaus(crtDF, newsvars[i], macrovars[j])
+            if A[:Pval_x2causex1]<thresh &&  A[:Pval_x1causex2]<thresh
+                causalMat[j,i] = 3
+                # causalMat[j,i] = A[:lagOrder]
+            elseif A[:Pval_x2causex1]<thresh &&  A[:Pval_x1causex2]>thresh
+                causalMat[j,i] = 1
+                # causalMat[j,i] = A[:lagOrder]
+            elseif A[:Pval_x2causex1]>thresh &&  A[:Pval_x1causex2]<thresh
+                causalMat[j,i] = 2
+                # causalMat[j,i] = A[:lagOrder]
+            end
+        catch x
+            print(x)
+        end
+    end
+end
+
+causalMat = DataFrame(causalMat)
+names!(causalMat, newsvars)
+causalMat[:macrovar] = macrovars
+
+CSV.write("/home/nicolas/Data/Results/Causality/causalSig.csv", causalMat)
 
 
-
-
-
-
-
-
-
+newsvars = [:Surp_Val_1, :Surp_HML_1_x_trend]
+macrovars = [:employ, :CSUSHPINSA]
+i,j = 1,1
+crtDF = newData[[:DATE, newsvars[i], macrovars[j]]]
+crtDF = deleteMissingRows(crtDF, newsvars[i], macrovars[j])
+for col in names(crtDF)[2:end]
+    crtDF[col] = convert(Array{Float64}, crtDF[col])
+end
+A = grangerVARCaus(crtDF, newsvars[i], macrovars[j])
 
 
 

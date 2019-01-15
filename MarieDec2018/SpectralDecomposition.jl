@@ -15,6 +15,7 @@ for freq in ["day", "week", "month", "quarter"]
             NS[freq][Symbol("Val_$(topic)_$(WS)_$freq")] = (NS_TS["SV_$(topic)_$(WS)_$freq"][:NS] .+ NS_TS["BV_$(topic)_$(WS)_$freq"][:NS]) ./ 2
             NS[freq][Symbol("Gro_$(topic)_$(WS)_$freq")] =  (NS_TS["SG_$(topic)_$(WS)_$freq"][:NS] .+ NS_TS["BG_$(topic)_$(WS)_$freq"][:NS]) ./ 2
             NS[freq][Symbol("HML_$(topic)_$(WS)_$freq")] = NS[freq][Symbol("Val_$(topic)_$(WS)_$freq")] .- NS[freq][Symbol("Gro_$(topic)_$(WS)_$freq")]
+            display(plot([NS[freq][Symbol("HML_$(topic)_$(WS)_$freq")], NS[freq][Symbol("Val_$(topic)_$(WS)_$freq")], NS[freq][Symbol("Gro_$(topic)_$(WS)_$freq")]]))
             for ptf in ["SV", "BV", "SG", "BG", "ALL"]
                 NS[freq][Symbol("$(ptf)_$(topic)_$(WS)_$freq")] = NS_TS["$(ptf)_$(topic)_$(WS)_$freq"][:NS]
             end
@@ -65,7 +66,7 @@ Data = hcat(Data, monthlyNsurp, NS["month"], makeunique=true)
 # crtNS = deleteMissingRows(Data, Symbol("HML_$(topic)_VW_month"), Symbol("HML_$(topic)_VW_$freq"))
 
 
-λ = 14400
+λ = 129600
 H = [4,6,12,24,36,48,60]
 P = [2,3,4,6,12,24,36]
 for crtvar in names(Data)[2:end]
@@ -85,29 +86,34 @@ for crtvar in names(Data)[2:end]
         ofilt, oreg = neverHPfilter(crtNS, h, p; dateCol=:DATE, varCol=Symbol(crtvar))
         names!(ofilt, [Symbol("optim_$x") for x in names(ofilt)])
         crtfilt = hcat(crtfilt, ofilt)
-        crtfilt[:x] = replace(crtfilt[:x], 0=>missing)
-        crtfilt = deleteMissingRows(crtfilt, :x_trend, :x)
-        crtfilt[:optim_x_trend] = replace(crtfilt[:optim_x_trend], missing=>NaN)
         crtfilt[:hp] = HPfilter(convert(Array{Float64}, crtfilt[:x]), λ)
+        crtfilt[:x] = replace(crtfilt[:x], 0=>missing)
+        crtfilt[:x_trend] = replace(crtfilt[:x_trend], missing=>NaN)
+        crtfilt = deleteMissingRows(crtfilt, :x)
+        crtfilt[:optim_x_trend] = replace(crtfilt[:optim_x_trend], missing=>NaN)
         trendplot = plot(crtfilt[:date], [crtfilt[:hp], crtfilt[:x_trend], crtfilt[:x], crtfilt[:optim_x_trend]],
-                          labels=["HP-filter", "trend", "raw", "optim_trend - AIC selection: h=$h, p=$p"], color=[i for j = 1:1, i=[:red, :blue, :black, :lime]],
+                          labels=["HP-filter", "trend: h=24, p=12", "raw", "optim_trend - AIC selection: h=$h, p=$p"], color=[i for j = 1:1, i=[:red, :blue, :black, :lime]],
                           linewidth=[i for j = 1:1, i=[2,3,1,3]], title="Hamilton trend: $crtvar",
                           xticks = crtfilt[:date][1]:Year(1):crtfilt[:date][end],rotation=30,
                           legend=:top, legendfontsize=7)
         png(trendplot, "/home/nicolas/Data/Results/Trend and Cyclicality filtering/$(crtvar)_trend.png")
-        
+
+        crtfilt = deleteMissingRows(crtfilt, :x, :hp)
         hp_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:hp])).power
-        trend_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:x_trend])).power
         x_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:x])).power
+        crtfilt[:x_trend] = replace(crtfilt[:x_trend], NaN=>missing)
+        crtfilt = deleteMissingRows(crtfilt, :x_trend)
+        trend_dens = Periodograms.periodogram(convert(Array{Float64}, crtfilt[:x_trend])).power
         spectralpower = plot([hp_dens[1:48], trend_dens[1:48], x_dens[1:48]], labels=["HP-filter", "trend", "raw"],
                 color=[i for j = 1:1, i=[:red, :blue, :black]], title="Periodogram: $crtvar")
         png(spectralpower, "/home/nicolas/Data/Results/Trend and Cyclicality filtering/$(crtvar)_spectralpower.png")
     catch x
-        error(x)
+        print(crtvar)
     end
 end
 
 
+std(skipmissing(Data[:HML_RES_VW_month]))
 
 
 
@@ -122,15 +128,20 @@ end
 
 
 
+crtfreq = "quarter"
+topic1, topic2 = "RES", "all"
 
+crtNS = deleteMissingRows(NS["$crtfreq"], Symbol("HML_$(topic1)_VW_$crtfreq"))
 
+summplot = plot(crtNS[:perID], [crtNS[Symbol("Gro_$(topic1)_VW_$crtfreq")],crtNS[Symbol("Gro_$(topic2)_VW_$crtfreq")],
+                     crtNS[Symbol("ALL_$(topic1)_VW_$crtfreq")], crtNS[Symbol("ALL_$(topic2)_VW_$crtfreq")],
+                     crtNS[Symbol("HML_$(topic1)_VW_$crtfreq")], crtNS[Symbol("HML_$(topic2)_VW_$crtfreq")]],
+    layout=(3,2), title = ["$i" for j = 1:1, i=["$(topic1) topics: Value (R) / Growth (B)","$(topic2) topics: Value (R) / Growth (B)", "$(topic1) topics: Market","$(topic2) topics: Market", "$(topic1) topics: HML", "$(topic2) topics: HML"]],
+    legend=false, legendtitle=["$i" for j = 1:1, i=["Gro", "Gro"]], titlefontsize=8,
+    framestyle=:grid, tickfontsize=6, xticks = crtNS[:perID][1]:Year(2):crtNS[:perID][end],
+    rotation=20, dpi=300, yticks = -0.2:0.05:0.25)
+summplot = plot!(crtNS[:perID], [crtNS[Symbol("Val_$(topic1)_VW_$crtfreq")], crtNS[Symbol("Val_$(topic2)_VW_$crtfreq")]], legend=false)
+png(summplot, "/home/nicolas/Data/Results/seriesSumm.png")
 
-# crtNS = deleteMissingRows(NS["$freq"], Symbol("HML_$(topic)_VW_$freq"))
-# plot(crtNS[:perID], [crtNS[Symbol("Gro_$(topic1)_VW_$freq")],crtNS[Symbol("Gro_$(topic2)_VW_$freq")],
-#                      crtNS[Symbol("ALL_$(topic1)_VW_$freq")], crtNS[Symbol("ALL_$(topic2)_VW_$freq")],
-#                      crtNS[Symbol("HML_$(topic1)_VW_$freq")], crtNS[Symbol("HML_$(topic2)_VW_$freq")]],
-#     layout=(3,2), title = ["$i" for j = 1:1, i=["$(topic1): Value (R) / Growth (B)","$(topic2): Value (R) / Growth (B)", "$(topic1): Market","$(topic2): Market", "$(topic1): HML", "$(topic2): HML"]],
-#     legend=false, legendtitle=["$i" for j = 1:1, i=["Gro", "Gro"]], titlefontsize=8, framestyle=:grid, tickfontsize=6)
-# plot!(crtNS[:perID], [crtNS[Symbol("Val_$(topic1)_VW_$freq")], crtNS[Symbol("Val_$(topic2)_VW_$freq")]], legend=false)
-# plot(crtNS[:perID], crtNS[Symbol("ALL_$(topic)_VW_$freq")])
-# join(Data, NS["month"], on=:perID, kind=:left)
+plot(crtNS[:perID], crtNS[Symbol("ALL_$(topic)_VW_$crtfreq")])
+join(Data, NS["month"], on=:perID, kind=:left)

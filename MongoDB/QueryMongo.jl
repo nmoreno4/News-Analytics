@@ -14,17 +14,15 @@ function queryDF(returnVars, initArrays, filters... ; dbname="Dec2018", collname
     crtfilter = OrderedDict()
     for filt in filters
         if length(filt[2])>1
-            filt[2] = Dict("\$gte"=>filt[2][1], "\$lte"=>filt[2][2])
+            a = Dict("\$gte"=>filt[2][1], "\$lte"=>filt[2][2])
         end
-        crtfilter[filt[1]] = filt[2]
+        crtfilter[filt[1]] = a
     end
     crtfilter = OrderedDictBSON.BSON(crtfilter)
     print(crtfilter)
 
     dbCursor = Mongoc.find(collection,crtfilter)
-    i=0
-    for el in dbCursor
-        i+=1
+    @time for el in dbCursor
         for crtvar in returnVars
             try
                 push!(resDic[crtvar], el[crtvar])
