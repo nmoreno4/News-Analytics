@@ -1,7 +1,7 @@
 module TSmanip
 
 using TSmap, DataFrames, Statistics, StatsBase, FindFcts, DataStructures, Dates
-export ret2tick, cumret2, cumret, aggRetByPeriod, aggNewsByPeriod, NSsuprise, computeNS
+export ret2tick, cumret2, cumret, aggRetByPeriod, aggNewsByPeriod, NSsuprise, computeNS, NSsuprise2
 
 function ret2tick(vec::AbstractArray, val=100 ; ignoremissing=false, dropinception=false)
     res = Float64[val]
@@ -95,21 +95,30 @@ function aggNewsByPeriod(perFct, crtdf, totNews, posNews, negNews, meCol, dateCo
     return result
 end
 
-
+"""
+a 1-day STspan will make sure that ST only focuses on TODAY
+"""
 function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:driftW, dateCol=:date)
     sort!(crtdf, [:permno, dateCol])
     topicLT = newsTopics[1]
     topicST = newsTopics[2]
-    keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
+    if iS != "EAD"
+        keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
+    end
+    cc = 0
+    nbstocks = length(Set(crtdf[:permno]))
     res = by(crtdf, [:permno]) do xdf
+        if iS == "EAD"
+            keyDates = crtdf[findall(replace(xdf[:,:EAD], missing=>0) .== 1), :date]
+        end
         res = Dict()
         finaldatesIdxs = Int[]
         perIdxs = OrderedDict(zip(keyDates, [Dict("LT"=>Int[], "ST"=>Int[]) for i in 1:length(keyDates)]))
         for row in 1:size(xdf,1)
             for kD in keyDates
-                if xdf[row,:date]<kD-STspan && xdf[row,:date]>kD-LTspan
+                if xdf[row,:date]<=kD-STspan && xdf[row,:date]>=kD-LTspan
                     push!(perIdxs[kD]["LT"], row)
-                elseif xdf[row,:date]<=kD && xdf[row,:date]>=kD-STspan
+                elseif xdf[row,:date]<=kD && xdf[row,:date]>kD-STspan
                     push!(perIdxs[kD]["ST"], row)
                 end
             end
@@ -124,21 +133,91 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
                 LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
                 STdf = xdf[idxs["ST"], :]
                 STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
-                push!(Nsurp, LTNS-STNS)
+                push!(Nsurp, STNS-LTNS)
             end
         end
         if length(finaldatesIdxs)>0
             res[:Nsurp] = replace(Nsurp, NaN=>missing)
             res[:date] = xdf[finaldatesIdxs, dateCol]
-            res[wCol] = xdf[finaldatesIdxs, wCol]
         else
             res[:Nsurp] = missing
             res[:date] = missing
-            res[wCol] = missing
         end
+        cc+=1
+        print("$(cc/nbstocks)% \n")
         DataFrame(res)
     end
     return res
+end
+
+
+function NSsuprise2(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:driftW, dateCol=:date)
+    sort!(crtdf, [:permno, dateCol])
+    topicLT = newsTopics[1]
+    topicST = newsTopics[2]
+    if iS != "EAD"
+        keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
+        res = par_by2(crtdf,surprise2, keyDates, LTspan, STspan, minLT, minST, iS, crtdf, topicLT, topicST, wCol, dateCol,:permno)
+    else
+        res = par_by2(crtdf,surprise2, keyDates, LTspan, STspan, minLT, minST, iS, nothing, topicLT, topicST, wCol, dateCol,:permno)
+    end
+    return res
+end
+
+
+function surprise2(xdf::AbstractDataFrame, keyDates, LTspan, STspan, minLT, minST, iS, crtdf, topicLT, topicST, wCol, dateCol)
+    if iS == "EAD"
+        keyDates = crtdf[findall(replace(xdf[:,:EAD], missing=>0) .== 1), :date]
+    end
+    res = Dict()
+    finaldatesIdxs = Int[]
+    perIdxs = OrderedDict(zip(keyDates, [Dict("LT"=>Int[], "ST"=>Int[]) for i in 1:length(keyDates)]))
+    for row in 1:size(xdf,1)
+        for kD in keyDates
+            if xdf[row,:date]<=kD-STspan && xdf[row,:date]>=kD-LTspan
+                push!(perIdxs[kD]["LT"], row)
+            elseif xdf[row,:date]<=kD && xdf[row,:date]>kD-STspan
+                push!(perIdxs[kD]["ST"], row)
+            end
+        end
+    end
+
+    Nsurp = Union{Missing,Float64}[]
+    #find end per keys
+    for (d, idxs) in perIdxs
+        if length(idxs["LT"])>=minLT && length(idxs["ST"])>=minST
+            push!(finaldatesIdxs, idxs["ST"][end])
+            LTdf = xdf[idxs["LT"], :]
+            LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
+            STdf = xdf[idxs["ST"], :]
+            STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
+            push!(Nsurp, STNS-LTNS)
+        end
+    end
+    if length(finaldatesIdxs)>0
+        res[:Nsurp] = replace(Nsurp, NaN=>missing)
+        res[:date] = xdf[finaldatesIdxs, dateCol]
+    else
+        res[:Nsurp] = missing
+        res[:date] = missing
+    end
+    return DataFrame(res)
+end
+
+
+function par_by2(df::AbstractDataFrame,f::Function, keyDates, LTspan, STspan, minLT, minST, iS, crtdf, topicLT, topicST, wCol, dateCol, cols::Symbol...)
+    res = NamedTuple[]
+    s = Threads.SpinLock()
+    groups = groupby(df,[cols...])
+    f(view(groups[1],1:size(df,2)), keyDates, LTspan, STspan, minLT, minST, iS, crtdf, topicLT, topicST, wCol, dateCol);
+    Threads.@threads for g in 1:length(groups)
+         rv= f(groups[g], keyDates, LTspan, STspan, minLT, minST, iS, crtdf, topicLT, topicST, wCol, dateCol)
+         Threads.lock(s)
+         key=tuple([groups[g][cc][1] for cc in cols]...)
+         push!(res,(key=key,val=rv))
+         Threads.unlock(s)
+    end
+    res
 end
 
 
@@ -161,7 +240,7 @@ function NSsupriseOLD(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW)
                 LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
                 STdf = xdf[(k:(k+STspan-1)), :]
                 STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
-                NSsurp[j] = LTNS-STNS
+                NSsurp[j] = STNS-LTNS
             end
             res[:NSsurp] = replace(NSsurp, NaN=>missing)
             res[:date] = xdf[(LTspan+STspan):end, :date]

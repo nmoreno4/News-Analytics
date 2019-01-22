@@ -73,6 +73,7 @@ of the period.
 """
 function driftWeights(crtdf, WS; rebalCol=:rebalPer, meCol=:me, stockCol=:permno, dateCol=:date, NS=false)
     sort!(crtdf, [stockCol, dateCol])
+    print(size(crtdf))
     result = by(crtdf, rebalCol) do xdf
         res = Dict()
         firstper = findall(xdf[:,dateCol].==minimum(xdf[:,dateCol]))
@@ -86,7 +87,10 @@ function driftWeights(crtdf, WS; rebalCol=:rebalPer, meCol=:me, stockCol=:permno
 
         DataFrame(res)
     end
+    print(size(result))
     startDF = join(crtdf, result, on=[rebalCol, stockCol], kind=:left)
+    unique!(startDF)
+    print(size(startDF))
 
     dWeights = by(startDF, [rebalCol, stockCol]) do xdf
         res = Dict()
@@ -113,6 +117,7 @@ function driftWeights(crtdf, WS; rebalCol=:rebalPer, meCol=:me, stockCol=:permno
         res[:driftW] = xdf[:,:driftW] ./ xdf[:,:totW]
         DataFrame(res)
     end
+    print(size(result))
 
     return result[:driftW]
 end

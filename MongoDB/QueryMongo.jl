@@ -84,13 +84,14 @@ function gatherData(tdrange, retvals, iniArrays;
     testQuery()
     @time for ptf in ptfs
         eArrays = deepcopy(iniArrays)
-        if length(ptf)==3
+        if typeof(ptf)!=String
             f1 = deepcopy(filters[ptf[1]])
             f2 = deepcopy(filters[ptf[2]])
             f3 = deepcopy(filters[ptf[3]])
             raw[ptfnames[cc]] = @time queryDF(retvals, eArrays, f1, f2, f3)
-        elseif length(ptf)==1
-            f1 = deepcopy(filters[ptf[1]])
+        else
+            print()
+            f1 = deepcopy(filters[ptf])
             raw[ptfnames[cc]] = @time queryDF(retvals, eArrays, f1)
         end
         cc+=1
