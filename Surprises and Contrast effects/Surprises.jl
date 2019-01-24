@@ -1,4 +1,4 @@
-using QueryMongo, DataFrames, Dates, TSmanip, Wfcts, LoadFF, Statistics, JLD2, Windsorize
+using QueryMongo, DataFrames, Dates, TSmanip, Wfcts, LoadFF, Statistics, JLD2, Windsorize,
       TSmap, Plots, CSV, TrendCycle, Misc, FindFcts, DataStructures, ShiftedArrays,
       RegressionTables, FixedEffectModels, FixedEffects, CovarianceMatrices, RDatasets
 
@@ -72,13 +72,16 @@ crtdf = @time preSurprise(NSMat, newsTopics; WS="VW")
 LTspan, STspan = Dates.Month(1), Dates.Day(1)
 # Started at 15:34 --> expect it to last approx 9 hours
 LT1ST1 = @time NSsuprise(crtdf, LTspan,  STspan, 1,1, 1, newsTopics) # Takes a fucking long time
-@time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/LT1ST1.jld2" LT1ST1
+# @time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/LT1ST1.jld2" LT1ST1
+# JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/LT1ST1.jld2"
 LT1ST1 = unique!(deleteMissingRows(LT1ST1, :date))
 rename!(LT1ST1, :Nsurp=>:Nsurp_1_LT1ST1)
 LTspan, STspan = Dates.Month(2), Dates.Day(3)
 LT2ST3 = @time NSsuprise(crtdf, LTspan,  STspan, 1,1, 1, newsTopics)
+# @time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/LT2ST3.jld2" LT2ST3
+# JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/LT2ST3.jld2"
 LT2ST3 = deleteMissingRows(LT2ST3, :date)
-rename!(LT2ST3, :Nsurp=>:Nsurp_1_LT2_ST3, :driftW=>:W_1_LT2_ST3)
+rename!(LT2ST3, :Nsurp=>:Nsurp_1_LT2_ST3)
 LT2ST3EAD = @time NSsuprise(crtdf, LTspan,  STspan, 1,1,"EAD", newsTopics)
 LT2ST3EAD = deleteMissingRows(LT2ST3EAD, :date)
 rename!(LT2ST3EAD, :Nsurp=>:Nsurp_EAD_LT2_ST3, :driftW=>:W_EAD_LT2_ST3)
@@ -92,16 +95,16 @@ bb = @time join(NSMat, aa, on=[:permno, :date], kind=:left)
 deletecols!(aaa, :driftW)
 bbb = @time join(NSMat, aaa, on=[:permno, :date], kind=:left)
 deletecols!(aaaaEAD, :driftW)
-bbbb = @time join(NSMat, LT1ST1, on=[:permno, :date], kind=:left)
-bbbb = @time join(NSMat, aaaa, on=[:permno, :date], kind=:left)
-@time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/Surp_LT2_ST3.jld2" bbbb
-@time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/Surp_LT2_ST3.jld2"
+df = @time join(NSMat, LT1ST1, on=[:permno, :date], kind=:left)
+df = @time join(df, LT2ST3, on=[:permno, :date], kind=:left)
+@time JLD2.@save "/home/nicolas/Data/Prcessed Data MongoDB/Surp_2.jld2" df
+# @time JLD2.@load "/home/nicolas/Data/Prcessed Data MongoDB/Surp_LT2_ST3.jld2"
 
 c = b[findall(replace(b[:,:EAD], missing=>0) .== 1), [:permno, :date, :EAD, :Nsurp, :retadj, :rankbm, :ranksize]]
 length(collect(skipmissing(a[:Nsurp])))
 
 
-for i in names(GroMat)
+for i in names(df)
     print("$i \n")
 end
 
@@ -121,29 +124,31 @@ rename!(RESFNS, :NS=>:NS_RESF, :perID=>:date)
 df = @time join(df, RESFNS[[:date, :permno, :NS_RESF]], on=[:date, :permno], kind=:left)
 
 
-GroMat = df[replace(df[:rankbm], missing=>NaN).<=2,:]
-ValMat = df[replace(df[:rankbm], missing=>NaN).>=9,:]
-BigMkt = df[replace(df[:ranksize], missing=>NaN).>9,:]
-BigMktAnnouncers = BigMkt[replace(BigMkt[:EAD], missing=>NaN).==1,:]
+GroMat = df[replace(df[:rankbm], missing=>NaN).<=2,[:date, :me, :permno, :rankbm, :Nsurp_1_LT1ST1, :Nsurp_1_LT2_ST3, :NS_ALL, :NS_RESF, :NS_RES, :EAD]]
+ValMat = df[replace(df[:rankbm], missing=>NaN).>=9,[:date, :me, :permno, :rankbm, :Nsurp_1_LT1ST1, :Nsurp_1_LT2_ST3, :NS_ALL, :NS_RESF, :NS_RES, :EAD]]
+BigMkt = df[replace(df[:ranksize], missing=>NaN).>9,[:date, :me, :permno, :rankbm, :Nsurp_1_LT1ST1, :Nsurp_1_LT2_ST3, :NS_ALL, :NS_RESF, :NS_RES, :EAD]]
+BigMktAnnouncers = BigMkt[replace(BigMkt[:EAD], missing=>NaN).==1,[:date, :me, :permno, :rankbm, :Nsurp_1_LT1ST1, :Nsurp_1_LT2_ST3, :NS_ALL, :NS_RESF, :NS_RES]]
 
-surpKind = :Nsurp_1_LT1ST1
 #recompute driftW
 WS = "VW"
 GroMat[:dailyRebal] = @time rebalPeriods(GroMat, :date; rebalPer=(dayofmonth, 1:32) )
 GroMat[:driftW] = @time driftWeights(GroMat, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:date, NS=true)
-Grosurp = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], surpKind, :date, :driftW), :date), surpKind=>:GroSurp)
+Grosurp1 = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], :Nsurp_1_LT1ST1, :date, :driftW), :date), :Nsurp_1_LT1ST1=>:GroSurp1)
+Grosurp2 = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], :Nsurp_1_LT2_ST3, :date, :driftW), :date), :Nsurp_1_LT2_ST3=>:GroSurp2)
 GroNS_ALL = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], :NS_ALL, :date, :driftW), [:date]), :NS_ALL=>:GroNS_ALL)
 GroNS_RESF = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], :NS_RESF, :date, :driftW), :date), :NS_RESF=>:GroNS_RESF)
 GroNS_RES = @time rename!(sort(varWeighter(GroMat[GroMat[:rankbm].<=2, :], :NS_RES, :date, :driftW), :date), :NS_RES=>:GroNS_RES)
 ValMat[:dailyRebal] = @time rebalPeriods(ValMat, :date; rebalPer=(dayofmonth, 1:32) )
 ValMat[:driftW] = @time driftWeights(ValMat, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:date, NS=true)
-Valsurp = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], surpKind, :date, :driftW), :date), surpKind=>:ValSurp)
+Valsurp1 = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], :Nsurp_1_LT1ST1, :date, :driftW), :date), :Nsurp_1_LT1ST1=>:ValSurp1)
+Valsurp2 = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], :Nsurp_1_LT2_ST3, :date, :driftW), :date), :Nsurp_1_LT2_ST3=>:ValSurp2)
 ValNS_ALL = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], :NS_ALL, :date, :driftW), :date), :NS_ALL=>:ValNS_ALL)
 ValNS_RESF = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], :NS_RESF, :date, :driftW), :date), :NS_RESF=>:ValNS_RESF)
 ValNS_RES = @time rename!(sort(varWeighter(ValMat[ValMat[:rankbm].>=9, :], :NS_RES, :date, :driftW), :date), :NS_RES=>:ValNS_RES)
 df[:dailyRebal] = @time rebalPeriods(df, :date; rebalPer=(dayofmonth, 1:32) )
 df[:driftW] = @time driftWeights(df, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:date, NS=true)
-Mktsurp = @time rename!(sort(varWeighter(df, surpKind, :date, :driftW), :date), surpKind=>:MktSurp)
+Mktsurp1 = @time rename!(sort(varWeighter(df, :Nsurp_1_LT1ST1, :date, :driftW), :date), :Nsurp_1_LT1ST1=>:MktSurp1)
+Mktsurp2 = @time rename!(sort(varWeighter(df, :Nsurp_1_LT2_ST3, :date, :driftW), :date), :Nsurp_1_LT2_ST3=>:MktSurp2)
 Mkt_NS_RESF = @time rename!(sort(varWeighter(df, :NS_LT, :date, :driftW), :date), :NS_LT=>:Mkt_NS_RESF)
 Mkt_NS_RES = @time rename!(sort(varWeighter(df, :NS_ST, :date, :driftW), :date), :NS_ST=>:Mkt_NS_RES)
 Mkt_ret = @time rename!(sort(varWeighter(df, :retadj, :date, :driftW), :date), :retadj=>:Mkt_ret)
@@ -152,25 +157,32 @@ MktNS_RESF = @time rename!(sort(varWeighter(df, :NS_RESF, :date, :driftW), :date
 MktNS_RES = @time rename!(sort(varWeighter(df, :NS_RES, :date, :driftW), :date), :NS_RES=>:MktNS_RES)
 BigMkt[:dailyRebal] = @time rebalPeriods(BigMkt, :date; rebalPer=(dayofmonth, 1:32) )
 BigMkt[:driftW] = @time driftWeights(BigMkt, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:date, NS=true)
-BigMktsurp = @time rename!(sort(varWeighter(BigMkt, surpKind, :date, :driftW), :date), surpKind=>:BigMktSurp)
+BigMktsurp1 = @time rename!(sort(varWeighter(BigMkt, :Nsurp_1_LT1ST1, :date, :driftW), :date), :Nsurp_1_LT1ST1=>:BigMktSurp1)
+BigMktsurp2 = @time rename!(sort(varWeighter(BigMkt, :Nsurp_1_LT2_ST3, :date, :driftW), :date), :Nsurp_1_LT2_ST3=>:BigMktSurp2)
 BigMktNS_ALL = @time rename!(sort(varWeighter(BigMkt, :NS_ALL, :date, :driftW), :date), :NS_ALL=>:BigMktNS_ALL)
 BigMktNS_RESF = @time rename!(sort(varWeighter(BigMkt, :NS_RESF, :date, :driftW), :date), :NS_RESF=>:BigMktNS_RESF)
 BigMktNS_RES = @time rename!(sort(varWeighter(BigMkt, :NS_RES, :date, :driftW), :date), :NS_RES=>:BigMktNS_RES)
 BigMktAnnouncers[:dailyRebal] = @time rebalPeriods(BigMktAnnouncers, :date; rebalPer=(dayofmonth, 1:32) )
 BigMktAnnouncers[:driftW] = @time driftWeights(BigMktAnnouncers, WS, rebalCol=:dailyRebal, meCol=:me, stockCol=:permno, dateCol=:date, NS=true)
-BigMktAnnouncerssurp = @time rename!(sort(varWeighter(BigMktAnnouncers, surpKind, :date, :driftW), :date), surpKind=>:BigMktAnnouncerssurp)
+BigMktAnnouncerssurp1 = @time rename!(sort(varWeighter(BigMktAnnouncers, :Nsurp_1_LT1ST1, :date, :driftW), :date), :Nsurp_1_LT1ST1=>:BigMktAnnouncerssurp1)
+BigMktAnnouncerssurp2 = @time rename!(sort(varWeighter(BigMktAnnouncers, :Nsurp_1_LT2_ST3, :date, :driftW), :date), :Nsurp_1_LT2_ST3=>:BigMktAnnouncerssurp2)
 BigMktAnnouncersNS_ALL = @time rename!(sort(varWeighter(BigMktAnnouncers, :NS_ALL, :date, :driftW), :date), :NS_ALL=>:BigMktAnnouncersNS_ALL)
 BigMktAnnouncersNS_RESF = @time rename!(sort(varWeighter(BigMktAnnouncers, :NS_RESF, :date, :driftW), :date), :NS_RESF=>:BigMktAnnouncersNS_RESF)
 BigMktAnnouncersNS_RES = @time rename!(sort(varWeighter(BigMktAnnouncers, :NS_RES, :date, :driftW), :date), :NS_RES=>:BigMktAnnouncersNS_RES)
 
-df = @time join(df, Grosurp, on=:date, kind=:left)
-df = join(df, Valsurp, on=:date, kind=:left)
-df = join(df, Mktsurp, on=:date, kind=:left)
+df = @time join(df, Grosurp1, on=:date, kind=:left)
+df = @time join(df, Grosurp2, on=:date, kind=:left)
+df = @time join(df, Valsurp1, on=:date, kind=:left)
+df = @time join(df, Valsurp2, on=:date, kind=:left)
+df = @time join(df, Mktsurp1, on=:date, kind=:left)
+df = join(df, Mktsurp2, on=:date, kind=:left)
 df = join(df, Mkt_NS_RESF, on=:date, kind=:left)
 df = join(df, Mkt_NS_RES, on=:date, kind=:left)
 df = join(df, Mkt_ret, on=:date, kind=:left)
-df = join(df, BigMktsurp, on=:date, kind=:left)
-df = join(df, BigMktAnnouncerssurp, on=:date, kind=:left)
+df = join(df, BigMktsurp1, on=:date, kind=:left)
+df = join(df, BigMktsurp2, on=:date, kind=:left)
+df = join(df, BigMktAnnouncerssurp1, on=:date, kind=:left)
+df = join(df, BigMktAnnouncerssurp2, on=:date, kind=:left)
 print("Some done")
 
 df = join(df, GroNS_ALL, on=:date, kind=:left)
@@ -194,6 +206,9 @@ df[:Date] = Date.(df[:date])
 FF = FFfactors()
 df = @time join(df, FF[[:Date, :Mkt_RF, :SMB, :HML, :RF, :Mom, :CMA, :RMW]], on=:Date, kind=:left)
 
+BigMktAnnouncersNS_RESF = nothing, BigMktAnnouncersNS_RES = nothing, BigMktAnnouncersNS_ALL = nothing,BigMktNS_RESF = nothing, BigMktNS_RES = nothing, BigMktNS_ALL = nothing,MktNS_RESF = nothing, MktNS_RES = nothing, MktNS_ALL = nothing,ValNS_RESF = nothing, ValNS_RES = nothing, ValNS_ALL = nothing,GroNS_RESF = nothing, GroNS_RES = nothing, GroNS_ALL = nothing,BigMktAnnouncerssurp1 = nothing, BigMktsurp1 = nothing, Mktsurp1 = nothing, Valsurp1, Grosurp1,Mkt_NS_RES, Mkt_NS_RES, Mkt_ret
+ValMat = nothing; BigMkt = nothing; BigMktAnnouncers = nothing
+
 ADFTest(collect(skipmissing(a[:Mkt_NS_RES])), :none, 40)
 std(skipmissing(MktNS_ALL[:MktNS_ALL]))
 # run the joins with the sentiments?""
@@ -214,21 +229,32 @@ df[:RES_coverage] = a[:RES_coverage]
 df[:lagALL_coverage] = a[:lagALL_coverage]
 df[:lagRES_coverage] = a[:lagRES_coverage]
 
+
+colstoremove = [:nS_RESF_inc_nov12H_0, :nS_RES_inc_RESF_excl_nov12H_0, :nS_nov12H_0, :negSum_RESF_inc_nov12H_0, :negSum_RES_inc_RESF_excl_nov12H_0, :negSum_nov12H_0, :posSum_RESF_inc_nov12H_0, :posSum_RES_inc_RESF_excl_nov12H_0, :posSum_nov12H_0, :perID, :Date]
+deletecols!(df, colstoremove)
+
+
 df[:StockCategorical] =  categorical(df[:permno])
 df[:YearCategorical] =  categorical(Dates.year.(df[:date]))
 df[:YearmonthCategorical] =  categorical(Dates.yearmonth.(df[:date]))
 df[:DateCategorical] =  categorical(df[:date])
 @time a = by(df, :permno) do xdf
     res = Dict()
-    res[:lagValSurp] = lag(xdf[:ValSurp])
-    res[:lagGroSurp] = lag(xdf[:GroSurp])
-    res[:lagMktSurp] = lag(xdf[:MktSurp])
+    res[:lagValSurp1] = lag(xdf[:ValSurp1])
+    res[:lagGroSurp1] = lag(xdf[:GroSurp1])
+    res[:lagMktSurp1] = lag(xdf[:MktSurp1])
+    res[:lagValSurp2] = lag(xdf[:ValSurp2])
+    res[:lagGroSurp2] = lag(xdf[:GroSurp2])
+    res[:lagMktSurp2] = lag(xdf[:MktSurp2])
     res[:lagMkt_NS_RES] = lag(xdf[:Mkt_NS_RES])
     res[:lagMkt_NS_RESF] = lag(xdf[:Mkt_NS_RESF])
     res[:lagMkt_ret] = lag(xdf[:Mkt_ret])
-    res[:lagBigMktSurp] = lag(xdf[:BigMktSurp])
-    res[:lagBigMktAnnouncerssurp] = lag(xdf[:BigMktAnnouncerssurp])
-    res[:lagNSurp] = lag(xdf[surpKind])
+    res[:lagBigMktSurp1] = lag(xdf[:BigMktSurp1])
+    res[:lagBigMktSurp2] = lag(xdf[:BigMktSurp2])
+    res[:lagBigMktAnnouncerssurp1] = lag(xdf[:BigMktAnnouncerssurp1])
+    res[:lagBigMktAnnouncerssurp2] = lag(xdf[:BigMktAnnouncerssurp2])
+    res[:lagNSurp1] = lag(xdf[:Nsurp_1_LT1ST1])
+    res[:lagNSurp2] = lag(xdf[:Nsurp_1_LT2_ST3])
     res[:lagGroNS_ALL] = lag(xdf[:GroNS_ALL])
     res[:lagValNS_ALL] = lag(xdf[:ValNS_ALL])
     res[:lagMktNS_ALL] = lag(xdf[:MktNS_ALL])
@@ -266,9 +292,10 @@ end
 # df[:lagNS_ALL] = a[:lagNS_ALL]
 # df[:lagNS_RES] = a[:lagNS_RES]
 # df[:lagNS_RESF] = a[:lagNS_RESF]
-a = @time join(df[[:date, :permno]], a[[:date, :permno, :lagNS_ALL, :lagNS_RES, :lagNS_RESF]], on=[:date, :permno], kind=:left)
+df = @time join(df, a, on=[:date, :permno], kind=:left)
 
-
+JLD2.@save "/run/media/nicolas/Research/Data/Surprise/2supr.jld2" df
+# JLD2.@load "/run/media/nicolas/Research/Data/Surprise/2supr.jld2"
 
 #############################
 # Regression Specifications #
@@ -284,27 +311,29 @@ m6 = @time reg(df[.!ismissing.(df[surpKind]),:], @model(retadj ~ lagMktSurp, fe 
 
 ####### Base Specification - simple robust errors #######
 length(collect(skipmissing(df[:NS_ALL])))
+noresdf = df[findall(ismissing.(df[:NS_RES])),:]
+noalldf = df[findall(ismissing.(df[:NS_ALL])),:]
 alldf = df[.!ismissing.(df[:NS_ALL]),:]
 resdf = df[.!ismissing.(df[:NS_RES]),:]
 lagresdf = df[.!ismissing.(df[:lagNS_RES]),:]
+
 lagalldf = df[.!ismissing.(df[:lagNS_ALL]),:]
 lagnoresdf = df[ismissing.(df[:lagNS_RES]),:]
 lagnoalldf = df[ismissing.(df[:lagNS_ALL]),:]
-noresdf = df[findall(ismissing.(df[:NS_RES])),:]
-noalldf = df[findall(ismissing.(df[:NS_ALL])),:]
 resfdf = df[.!ismissing.(df[:NS_RESF]),:]
-surpdf = df[.!ismissing.(df[surpKind]),:]
+surpdf1 = df[.!ismissing.(df[:Nsurp_1_LT1ST1]),:]
+surpdf2 = df[.!ismissing.(df[:Nsurp_1_LT2_ST3]),:]
 eaddf = df[.!ismissing.(df[:EAD]),:]
 valdf = df[replace(df[:rankbm], missing=>NaN).>=9,:]
 grodf = df[replace(df[:rankbm], missing=>NaN).<=2,:]
 
 
 
-specname = "baseSpec"
-m1 = @time reg(surpdf, @model(retadj ~ lagMktSurp , vcov = robust))
-m2 = @time reg(surpdf, @model(retadj ~ lagMktSurp + Nsurp_1_LT2_ST3 , vcov = robust))
-m3 = @time reg(surpdf, @model(l1_f1 ~ lagMktSurp , vcov = robust))
-m4 = @time reg(surpdf, @model(l1_f1 ~ lagMktSurp + Nsurp_1_LT2_ST3 , vcov = robust))
+specname = "baseSpec1"
+m1 = @time reg(surpdf1, @model(retadj ~ lagMktSurp1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf1, @model(retadj ~ lagMktSurp1 + Nsurp_1_LT1ST1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf1, @model(l1_f1 ~ lagMktSurp1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf1, @model(l1_f1 ~ lagMktSurp1 + Nsurp_1_LT1ST1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
 
 regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
 regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
@@ -313,11 +342,25 @@ regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Result
                          estim_decoration = my_latex_estim_decoration,
                          labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
                                        "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
-                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$"))
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
 
+#
+specname = "baseSpec2"
+m1 = @time reg(surpdf2, @model(f1_f20 ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf2, @model(f1_f20 ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf2, @model(f1_f20 ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf2, @model(f1_f20 ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
 
+regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
+regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
+                         below_statistic=:tstat, below_decoration=mydec1, print_estimator_section=false,
+                         regressors=["lagMktSurp", "Nsurp_1_LT2_ST3"], statisticformat="%0.3f",
+                         estim_decoration = my_latex_estim_decoration,
+                         labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
+                                       "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
 
-
+#
 specname = "baseSpecDateCluster"
 m1 = @time reg(surpdf, @model(retadj ~ lagMktSurp , vcov = cluster(DateCategorical)))
 m2 = @time reg(surpdf, @model(retadj ~ lagMktSurp + Nsurp_1_LT2_ST3 , vcov = cluster(DateCategorical)))
@@ -331,7 +374,7 @@ regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Result
                          estim_decoration = my_latex_estim_decoration,
                          labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
                                        "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
-                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$"))
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
 
 
 specname = "baseSpecDateClusterFE"
@@ -347,18 +390,37 @@ regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Result
                          estim_decoration = my_latex_estim_decoration,
                          labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
                                        "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
-                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$"))
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
 
 
-
-specname = "baseSpecNScontrol"
+#
+specname = "baseSpecNScontrol1"
 # crtdf = copy(surpdf)
 # crtdf[:lagNS_RES] = replace(crtdf[:lagNS_RES], missing=>0)
 # crtdf[:lagNSurp] = replace(crtdf[:lagNSurp], missing=>0)
-m1 = @time reg(surpdf, @model(retadj ~ lagMktSurp + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
-m2 = @time reg(surpdf, @model(retadj ~ lagMktSurp + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
-m3 = @time reg(surpdf, @model(l1_f0 ~ lagMktSurp + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
-m4 = @time reg(surpdf, @model(l1_f0 ~ lagMktSurp + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m1 = @time reg(surpdf1, @model(retadj ~ lagMktSurp1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf1, @model(retadj ~ lagMktSurp1 + Nsurp_1_LT1ST1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf1, @model(l1_f0 ~ lagMktSurp1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf1, @model(l1_f0 ~ lagMktSurp1 + Nsurp_1_LT1ST1 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+
+regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
+regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
+                         below_statistic=:tstat, below_decoration=mydec1, print_estimator_section=false,
+                         regressors=["lagMktSurp", "Nsurp_1_LT1ST1", "lagMktNS_RES", "lagMktNS_ALL"], statisticformat="%0.3f",
+                         estim_decoration = my_latex_estim_decoration,
+                         labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
+                                       "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
+
+#
+specname = "baseSpecNScontrol2"
+# crtdf = copy(surpdf)
+# crtdf[:lagNS_RES] = replace(crtdf[:lagNS_RES], missing=>0)
+# crtdf[:lagNSurp] = replace(crtdf[:lagNSurp], missing=>0)
+m1 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
 
 regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
 regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
@@ -367,12 +429,69 @@ regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Result
                          estim_decoration = my_latex_estim_decoration,
                          labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
                                        "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
-                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$"))
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
 # Day fixed effects and contemporaneous market returns account for a similar amount of
 # variation. However, the coefficient for the surprise switches sign! I suspect this is because
 # an extremely low amount of variation is left to explain, so it immediately becomes significant.
 
 
+#
+eaddf = df[.!ismissing.(df[:EAD]),:]
+lagresdf = df[.!ismissing.(df[:lagNS_RES]),:]
+
+specname = "sample1"
+# crtdf = copy(surpdf)
+# crtdf[:lagNS_RES] = replace(crtdf[:lagNS_RES], missing=>0)
+# crtdf[:lagNSurp] = replace(crtdf[:lagNSurp], missing=>0)
+m1 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+
+regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
+regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
+                         below_statistic=:tstat, below_decoration=mydec1, print_estimator_section=false,
+                         regressors=["lagMktSurp", "Nsurp_1_LT2_ST3", "lagMktNS_RES", "lagMktNS_ALL"], statisticformat="%0.3f",
+                         estim_decoration = my_latex_estim_decoration,
+                         labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
+                                       "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
+
+
+#
+specname = "sample2"
+# crtdf = copy(surpdf)
+# crtdf[:lagNS_RES] = replace(crtdf[:lagNS_RES], missing=>0)
+# crtdf[:lagNSurp] = replace(crtdf[:lagNSurp], missing=>0)
+m1 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m2 = @time reg(surpdf2, @model(retadj ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m3 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+m4 = @time reg(surpdf2, @model(l1_f0 ~ lagMktSurp2 + Nsurp_1_LT2_ST3 + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
+
+regtable(m1, m2, m3, m4; renderSettings = asciiOutput(), below_statistic=:tstat)
+regtable(m1, m2, m3, m4; renderSettings = latexOutput("/home/nicolas/Data/Results/Contrast effects/regression tables/$(specname).tex"),
+                         below_statistic=:tstat, below_decoration=mydec1, print_estimator_section=false,
+                         regressors=["lagMktSurp", "Nsurp_1_LT2_ST3", "lagMktNS_RES", "lagMktNS_ALL"], statisticformat="%0.3f",
+                         estim_decoration = my_latex_estim_decoration,
+                         labels = Dict("lagMktSurp" => "\$Surprise^{Market}_{t-1}\$", "Nsurp_1_LT2_ST3"=>"\$Surprise^i_t\$",
+                                       "retadj"=>"\$Ret^i_{t}\$", "l1_f1"=>"\$Ret^i_{[t-1,t+1]}\$", "lagMktNS_RES"=>"\$RES\\_NS_{t-1}^{Market}\$",
+                                       "lagMktNS_ALL"=>"\$ALL\\_NS_{t-1}^{Market}\$", "Nsurp_1_LT1ST1"=>"\$Surprise^i_t\$"))
+
+
+
+# Is it a contrast with your own news or sth else (biased expectations)?
+nosurp1 = df[ismissing.(df[:Nsurp_1_LT1ST1]),:]
+nosurp2 = df[ismissing.(df[:Nsurp_1_LT2_ST3]),:]
+resdf = df[.!ismissing.(df[:NS_RES]),:]
+noalldf = df[findall(ismissing.(df[:NS_ALL])),:]
+df[:SurpDay1] = replace(df[:Nsurp_1_LT1ST1].*0 .+ 1, missing=>0)
+df[:SurpDay2] = replace(df[:Nsurp_1_LT2_ST3].*0 .+ 1, missing=>0)
+df[:RESday] = replace(df[:NS_RES].*0 .+ 1, missing=>0)
+df[:ALLday] = replace(df[:NS_ALL].*0 .+ 1, missing=>0)
+
+
+
+#
 specname = "optimalSample"
 m1 = @time reg(df, @model(retadj ~ lagMktSurp + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))
 m2 = @time reg(alldf, @model(retadj ~ lagMktSurp + lagMktNS_RES + lagMktNS_ALL, vcov = cluster(DateCategorical)))

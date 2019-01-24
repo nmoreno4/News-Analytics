@@ -102,23 +102,16 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
     sort!(crtdf, [:permno, dateCol])
     topicLT = newsTopics[1]
     topicST = newsTopics[2]
-    if iS != "EAD"
-        keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
-    end
-    cc = 0
-    nbstocks = length(Set(crtdf[:permno]))
+    keyDates = sort(collect(Set(crtdf[:date])))[1:iS:end]
     res = by(crtdf, [:permno]) do xdf
-        if iS == "EAD"
-            keyDates = crtdf[findall(replace(xdf[:,:EAD], missing=>0) .== 1), :date]
-        end
         res = Dict()
         finaldatesIdxs = Int[]
         perIdxs = OrderedDict(zip(keyDates, [Dict("LT"=>Int[], "ST"=>Int[]) for i in 1:length(keyDates)]))
         for row in 1:size(xdf,1)
             for kD in keyDates
-                if xdf[row,:date]<=kD-STspan && xdf[row,:date]>=kD-LTspan
+                if xdf[row,:date]<kD-STspan && xdf[row,:date]>kD-LTspan
                     push!(perIdxs[kD]["LT"], row)
-                elseif xdf[row,:date]<=kD && xdf[row,:date]>kD-STspan
+                elseif xdf[row,:date]<=kD && xdf[row,:date]>=kD-STspan
                     push!(perIdxs[kD]["ST"], row)
                 end
             end
@@ -133,22 +126,23 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
                 LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
                 STdf = xdf[idxs["ST"], :]
                 STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
-                push!(Nsurp, STNS-LTNS)
+                push!(Nsurp, LTNS-STNS)
             end
         end
         if length(finaldatesIdxs)>0
             res[:Nsurp] = replace(Nsurp, NaN=>missing)
             res[:date] = xdf[finaldatesIdxs, dateCol]
+            res[wCol] = xdf[finaldatesIdxs, wCol]
         else
             res[:Nsurp] = missing
             res[:date] = missing
+            res[wCol] = missing
         end
-        cc+=1
-        print("$(cc/nbstocks)% \n")
         DataFrame(res)
     end
     return res
 end
+
 
 
 function NSsuprise2(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:driftW, dateCol=:date)
