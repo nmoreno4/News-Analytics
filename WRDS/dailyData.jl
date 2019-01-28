@@ -46,7 +46,8 @@ CRSPdf[:prc] = abs.(CRSPdf[:prc])
 CRSPdf[:volume]=CRSPdf[:vol] .* CRSPdf[:prc]
 CRSPdf[:me]=abs.(CRSPdf[:prc] .* CRSPdf[:shrout])
 
-CRSPdf[:retadj] = windsorize(CRSPdf[:retadj], 99.9, 0.01)
+# Note: Jan 2019 has NOT been windsorized
+# CRSPdf[:retadj] = windsorize(CRSPdf[:retadj], 99.9, 0.01)
 
 # Compute date-frequency identifiers
 ys = Dates.year.(CRSPdf[:date])
@@ -85,7 +86,7 @@ DataFrames.deletecols!(CRSPdf, [:ret, :vol, :dlret, :shrout])
 
 using Mongoc, Dates, JSON
 client = Mongoc.Client()
-database = client["Dec2018"]
+database = client["Jan2019"]
 collection = database["PermnoDay"]
 
 @time for row in 1:size(CRSPdf,1)
@@ -105,25 +106,25 @@ end
 ############################################################
 # This part only if you wish to update a specific variable #
 ############################################################
-varToUpdate = :me
-
-using Mongoc, Dates, JSON
-client = Mongoc.Client()
-database = client["Dec2018"]
-collection = database["PermnoDay"]
-
-CRSPdfUpdate = CRSPdf[[:permno, :date, varToUpdate]]
-CRSPdfUpdate = CRSPdfUpdate[.!ismissing.(CRSPdfUpdate[varToUpdate]),:]
-
-for row in 1:size(CRSPdfUpdate,1)
-    # Show advancement
-    if row in 100000:100000:size(CRSPdfUpdate,1)
-        print("Advnacement : ~$(round(100*row/size(CRSPdfUpdate,1)))% \n")
-    end
-
-    setDict = Dict("$varToUpdate"=>CRSPdfUpdate[row,varToUpdate])
-    selectDict = [Dict("date"=>CRSPdfUpdate[row,:date]), Dict("permno"=>CRSPdfUpdate[row,:permno])]
-    crtselector = Mongoc.BSON(Dict("\$and" => selectDict))
-    crtupdate = Mongoc.BSON(Dict("\$set"=>setDict))
-    Mongoc.update_many(collection, crtselector, crtupdate)
-end
+# varToUpdate = :me
+#
+# using Mongoc, Dates, JSON
+# client = Mongoc.Client()
+# database = client["Dec2018"]
+# collection = database["PermnoDay"]
+#
+# CRSPdfUpdate = CRSPdf[[:permno, :date, varToUpdate]]
+# CRSPdfUpdate = CRSPdfUpdate[.!ismissing.(CRSPdfUpdate[varToUpdate]),:]
+#
+# for row in 1:size(CRSPdfUpdate,1)
+#     # Show advancement
+#     if row in 100000:100000:size(CRSPdfUpdate,1)
+#         print("Advnacement : ~$(round(100*row/size(CRSPdfUpdate,1)))% \n")
+#     end
+#
+#     setDict = Dict("$varToUpdate"=>CRSPdfUpdate[row,varToUpdate])
+#     selectDict = [Dict("date"=>CRSPdfUpdate[row,:date]), Dict("permno"=>CRSPdfUpdate[row,:permno])]
+#     crtselector = Mongoc.BSON(Dict("\$and" => selectDict))
+#     crtupdate = Mongoc.BSON(Dict("\$set"=>setDict))
+#     Mongoc.update_many(collection, crtselector, crtupdate)
+# end

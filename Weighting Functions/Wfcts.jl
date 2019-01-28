@@ -1,7 +1,7 @@
 module Wfcts
 
 using DataFrames, RollingFunctions, ShiftedArrays, TSmap, Dates, Buckets, TSmanip
-export FFweighting, varWeighter, rebalPeriods, driftWeights
+export FFweighting, varWeighter, rebalPeriods, driftWeights, everyDayWeights
 
 
 function FFweighting(crtdf, timeVar, wVar, iVar)
@@ -35,10 +35,10 @@ by indicating the number of periods between two rebalancements [nbPeriods], or e
 the date hits a specific period [rebalPer] (e.g. month, week, year).
 Specify either [nbPeriods] OR [rebalPer].
 """
-function rebalPeriods(cdf, datesCol; nbPeriods=false, rebalPer=false)
+function rebalPeriods(cdf, datesCol; nbPeriods=false, rebalPer=false, everyday=false)
     dVec = cdf[datesCol]
     daysToKeep = typeof(dVec[1])[]
-    if typeof(rebalPer)!=Bool && !nbPeriods
+    if typeof(rebalPer)!=Bool && !nbPeriods && !everyday
         possibleRebalDays = minimum(dVec):Dates.Day(1):maximum(dVec)
         dayIDfunc, rebalID = rebalPer[1], rebalPer[2]
         if !(typeof(rebalID)<:AbstractArray)
@@ -49,20 +49,39 @@ function rebalPeriods(cdf, datesCol; nbPeriods=false, rebalPer=false)
                 push!(daysToKeep, d)
             end
         end
-    elseif typeof(nbPeriods)!=Bool && !rebalPer
+    elseif typeof(nbPeriods)!=Bool && !rebalPer && !everyday
         print("The method where rebalancement every X days is made needs still to be implemented!")
+    elseif everyday && !rebalPer && !nbPeriods
+        res = ones(size(cdf, 1))
     else
-        error("You need to specify either [nbPeriods] or [rebalPer]!!")
+        error("You need to specify either [nbPeriods] or [rebalPer] or [everyday]!!")
     end
 
-    res = typeof(daysToKeep[1])[]
-    for i in dVec
-        push!(res, assignBucket(i, daysToKeep, [dVec[1]-Dates.Day(1); daysToKeep]) )
+    if !everyday
+        res = typeof(daysToKeep[1])[]
+        for i in dVec
+            push!(res, assignBucket(i, daysToKeep, [dVec[1]-Dates.Day(1); daysToKeep]) )
+        end
     end
 
     return res
 end
 
+
+
+function everyDayWeights(crtdf, WS; meCol=:me, stockCol=:permno, dateCol=:date)
+   result = by(crtdf, dateCol) do xdf
+       res = Dict()
+
+       if WS=="EW"
+           res[:W] = (xdf[:,meCol] .* 0 .+ 1) ./ length(collect(skipmissing(xdf[:,meCol])))
+       elseif WS=="VW"
+           res[:W] = xdf[:,meCol] ./ sum(skipmissing(xdf[:,meCol]))
+       end
+       DataFrame(res)
+   end
+   return result[:W]
+end
 
 
 
@@ -123,14 +142,22 @@ function driftWeights(crtdf, WS; rebalCol=:rebalPer, meCol=:me, stockCol=:permno
 end
 
 
-
-function varWeighter(crtdf, varCol, dateCol, wCol)
+"""
+ONM stands for "Only Non Missing"
+"""
+function varWeighter(crtdf, varCol, dateCol, wCol; ONM=false)
     result = by(crtdf, [dateCol]) do xdf
         res = Dict()
-        try
-            res[varCol] = sum(skipmissing(xdf[:,varCol] .* xdf[:,wCol]))
-        catch
-            print("\n No news on day $(xdf[1,dateCol]) \n")
+        if length(collect(skipmissing(xdf[:,varCol]))) != 0
+            wVec = xdf[:,wCol]
+            if ONM==true
+                wV = (xdf[:,varCol] .* 0 .+ 1) .* wVec
+                wSum = sum(skipmissing(wV))
+                wVec = wV ./ wSum
+            end
+            res[varCol] = sum(skipmissing(xdf[:,varCol] .* wVec))
+        else
+            # print("\n No news on day $(xdf[1,dateCol]) \n")
             res[varCol] = missing
         end
         DataFrame(res)

@@ -160,7 +160,7 @@ for row in 1:size(CRSPdf,1)
         CRSPdf[row, :lme] = CRSPdf[row,:me]/CRSPdf[row,:cumretx]
     end
 end
-delete!(CRSPdf, :count)
+deletecols!(CRSPdf, :count)
 
 
 # baseline me from which I will compute the drift in weight_port.
@@ -350,13 +350,13 @@ names!(monthlyMerge, [:permno, :permid, :ymonth, :prcM, :volM, :spreadM, :retadj
 ##########################################
 using Mongoc, Dates, JSON, DataStructures
 client = Mongoc.Client()
-database = client["Dec2018"]
+database = client["Jan2019"]
 collection = database["PermnoDay"]
 
 for row in 1:size(monthlyMerge,1)
 
     # Show advancement
-    if row in 10000:10000:size(monthlyMerge,1)
+    if row in 10:30000:size(monthlyMerge,1)
         print("Advnacement : ~$(round(100*row/size(monthlyMerge,1)))% \n")
     end
 
@@ -371,7 +371,7 @@ for row in 1:size(monthlyMerge,1)
         end
     end
     if length(colstodelete)>0
-        delete!(crtrow,colstodelete)
+        deletecols!(crtrow,colstodelete)
     end
 
     # Create selector and updator dictionaries

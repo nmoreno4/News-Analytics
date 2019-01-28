@@ -135,20 +135,32 @@ that topic (false).
 top1 is the "stonger" conditioning if top1, top2 and top3 are provided given the
 ordering of abjoin and bcjoin
 """
-function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=false, abjoin=&, bcjoin=&, relthresh=0.9)
+function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=false, abjoin=&, bcjoin=&, relthresh=0, replacemissing=true)
     stCount = 0
     posSum = 0
     negSum = 0
+    if typeof(relthresh)==String
+        relthresh = 0
+        multrel = true
+    else
+        relthresh = relthresh/100
+        multrel = false
+    end
     for i in 1:length(permnoday)
+        if multrel
+            relsmooth=permnoday[i]["relevance"]
+        else
+            relsmooth=1
+        end
         if top1==() && top2==() && top3==()
             if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                 stCount+=1
-                posSum+=permnoday[i]["sentimentPositive"]
-                negSum+=permnoday[i]["sentimentNegative"]
+                posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
             elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                 stCount+=1
-                posSum+=permnoday[i]["sentimentPositive"]
-                negSum+=permnoday[i]["sentimentNegative"]
+                posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
             end
         elseif top2==() && top3==()
             top1[2] ? a = in : a = !in
@@ -161,12 +173,12 @@ function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=fals
             if topicCond
                 if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 end
             end
         elseif length(top2)>0 && top3==()
@@ -186,12 +198,12 @@ function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=fals
             if topicCond
                 if typeof(novFilter)==Bool && !novFilter && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 elseif permnoday[i][novFilter[1]]<=novFilter[2] && permnoday[i]["relevance"]>=relthresh
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 end
             end
         elseif length(top2)>0 && length(top3)>0
@@ -215,14 +227,25 @@ function computeTopicScores(permnoday, top1=(), top2=(), top3=(); novFilter=fals
             if topicCond
                 if typeof(novFilter)==Bool && !novFilter
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 elseif permnoday[i][novFilter[1]]<=novFilter[2]
                     stCount+=1
-                    posSum+=permnoday[i]["sentimentPositive"]
-                    negSum+=permnoday[i]["sentimentNegative"]
+                    posSum+=(permnoday[i]["sentimentPositive"]*relsmooth)
+                    negSum+=(permnoday[i]["sentimentNegative"]*relsmooth)
                 end
             end
+        end
+    end
+    if replacemissing
+        if stCount==0
+            stCount=missing
+        end
+        if posSum==0
+            posSum=missing
+        end
+        if negSum==0
+            negSum=missing
         end
     end
     return stCount, posSum, negSum

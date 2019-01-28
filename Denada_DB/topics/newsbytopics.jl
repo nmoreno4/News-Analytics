@@ -1,7 +1,7 @@
 using CSV
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
-tdperiods = (1,3776) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
+tdperiods = (1,12) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
 
 using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates, DataFramesMeta, JLD2, RollingFunctions
 
@@ -21,7 +21,7 @@ topics = ["AAA", "ACCI", "ALLCE", "BACT", "BKRFIG", "BKRT", "BONS", "BOSS1",
           "MONOP", "MRG", "NAMEC", "PRES1", "PRIV", "PRXF", "RECAP1", "RECLL",
           "REORG", "RES", "RESF", "SHPP", "SHRACT", "SISU", "SL1", "SPLITB",
           "STAT", "STK", "XPAND",""]
-for i in ["_$(x)" for x in topics]
+for i in ["_$(x)" for x in ["AAA"]]
     if i =="_"
         i=""
     end
@@ -34,7 +34,8 @@ for i in ["_$(x)" for x in topics]
     try
         delete!(resdf, :_id)
         [resdf[resdf[nm] .== nothing, nm] = NaN for nm in names(resdf)]
-        CSV.write("/run/media/nicolas/Research/DenadaDB/CSVs/N$(i).csv", resdf)
+        # CSV.write("/run/media/nicolas/Research/DenadaDB/CSVs/N$(i).csv", resdf)
+        show(resdf)
     catch
         print("there was a problem")
     end

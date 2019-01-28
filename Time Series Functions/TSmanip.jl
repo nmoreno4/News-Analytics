@@ -126,7 +126,7 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
                 LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
                 STdf = xdf[idxs["ST"], :]
                 STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
-                push!(Nsurp, LTNS-STNS)
+                push!(Nsurp, STNS-LTNS)
             end
         end
         if length(finaldatesIdxs)>0
