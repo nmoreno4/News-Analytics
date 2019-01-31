@@ -109,8 +109,10 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
         perIdxs = OrderedDict(zip(keyDates, [Dict("LT"=>Int[], "ST"=>Int[]) for i in 1:length(keyDates)]))
         for row in 1:size(xdf,1)
             for kD in keyDates
+                # Date is strictly after kd-LTspan, and strictly prior to kd-STspan
                 if xdf[row,:date]<kD-STspan && xdf[row,:date]>kD-LTspan
                     push!(perIdxs[kD]["LT"], row)
+                # Date is after (or equal to) kd-STspan, but prior (or equal) to kd
                 elseif xdf[row,:date]<=kD && xdf[row,:date]>=kD-STspan
                     push!(perIdxs[kD]["ST"], row)
                 end
@@ -142,6 +144,10 @@ function NSsuprise(crtdf, LTspan, STspan, minLT, minST, iS, newsTopics, wCol=:dr
     end
     return res
 end
+
+
+
+
 
 
 
@@ -230,19 +236,17 @@ function NSsupriseOLD(crtdf, LTspan, STspan, iS, newsTopics, wCol=:driftW)
         if nbObs>0
             NSsurp = zeros(nbObs)
             for (j,k) in zip(1:iS:(T-(LTspan+STspan)+1), (LTspan+1):iS:T)
-                LTdf = xdf[(j:(k-1)), :]
+                LTdf = xdf[(j:(k-1)), [topicLT[1], topicLT[2], topicLT[3]] ]
                 LTNS = computeNS(LTdf, topicLT[1], topicLT[2], topicLT[3])
-                STdf = xdf[(k:(k+STspan-1)), :]
+                STdf = xdf[(k:(k+STspan-1)), [topicST[1], topicST[2], topicST[3]] ]
                 STNS = computeNS(STdf, topicST[1], topicST[2], topicST[3])
                 NSsurp[j] = STNS-LTNS
             end
             res[:NSsurp] = replace(NSsurp, NaN=>missing)
             res[:date] = xdf[(LTspan+STspan):end, :date]
-            res[wCol] = xdf[(LTspan+STspan):end, wCol]
         else
             res[:NSsurp] = missing
             res[:date] = missing
-            res[wCol] = missing
         end
         DataFrame(res)
     end

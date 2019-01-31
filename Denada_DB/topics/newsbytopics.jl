@@ -1,9 +1,10 @@
 using CSV
 dbname = :Denada
 collname = :daily_CRSP_CS_TRNA
-tdperiods = (1,12) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
+tdperiods = (1,3776) # Start at period 1 to avoid problems. Edit code if need to start at later periods.(possibly in subperiodCol)
 
-using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates, DataFramesMeta, JLD2, RollingFunctions
+using PyCall, StatsBase, Statistics, NaNMath, RCall, DataFrames, JLD, Dates,
+      DataFramesMeta, JLD2, RollingFunctions
 
 laptop = "/home/nicolas/github/News-Analytics"
 include("$(laptop)/DescriptiveStats/helpfcts.jl")
@@ -20,8 +21,8 @@ topics = ["AAA", "ACCI", "ALLCE", "BACT", "BKRFIG", "BKRT", "BONS", "BOSS1",
           "FIND1", "FINE1", "HOSAL", "IPO", "LAYOFS", "LIST1", "MEET1", "MNGISS",
           "MONOP", "MRG", "NAMEC", "PRES1", "PRIV", "PRXF", "RECAP1", "RECLL",
           "REORG", "RES", "RESF", "SHPP", "SHRACT", "SISU", "SL1", "SPLITB",
-          "STAT", "STK", "XPAND",""]
-for i in ["_$(x)" for x in ["AAA"]]
+          "STAT", "STK", "XPAND"]
+for i in ["_$(x)" for x in topics]
     if i =="_"
         i=""
     end

@@ -1,17 +1,30 @@
 ##########################################################################################
 # Description...
 ##########################################################################################
-using JSON, JLD2, Dates, ReadReuters, Statistics, StatsBase, Buckets, DBstats, Mongoc
+using JSON, JLD2, Dates, ReadReuters, Statistics, StatsBase, Buckets, DBstats, Mongoc, ArgParse
 
-# 2017, 2016, 2003, 2004, 2005, 2006, 2007, 2008, 2009
-# [2008-2015] is only analytics
-# 2014 failed at JLD2 save
+
+# Add possibility to add relevance , volume and novelty alone!!!
+s = ArgParseSettings()
+@add_arg_table s begin
+    "--y"
+        help = "Serves for both yend and ystart"
+        arg_type = Int
+    "--f"
+        help = "Is it permidTdDic or permidTdDic2?"
+        arg_type = Int
+    "--ioa"
+        help = "Boolean. Should only analytics be inserted?"
+        arg_type = Bool
+        default = false
+end
+parsed_args = parse_args(ARGS, s)
 ############## Params ##############
 offsetNewsDay = Dates.Minute(15)
 datef = DateFormat("y-m-dTH:M:S.sZ");
 recomputeUniqueTDs = false
-ystart, yend = 2017,2017
-insertOnlyAna = false
+ystart, yend = parsed_args["y"],parsed_args["y"]
+insertOnlyAna = parsed_args["ioa"]
 ####################################
 using Mongoc
 client = Mongoc.Client()
@@ -32,181 +45,16 @@ function deleteMissingKeys!(myDic)
     return myDic
 end
 
-# function splitDict(inputDic, nbSplits)
-#     alldicts = []
-#     L = length(inputDic)
-#     for i in 1:ceil(L/nbSplits):L
-#         maxval = minimum([i+ceil(L/nbSplits), L+1])-1
-#         print("$i -- $maxval \n")
-#         push!(alldicts, Dict(collect(inputDic)[Int(i):Int(maxval)]))
-#     end
-#     return tuple(alldicts...)
-# end
-#
-# dictByStories = Dict{String,Any}("totaltakes"=>0)
-# for year in ystart:yend
-#     @time for crtfile in readdir("/run/media/nicolas/OtherData/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/$(year)")
-#         print("$crtfile \n")
-#         f = open("/run/media/nicolas/OtherData/Reuters/TRNA/Archives/TR_News/CMPNY_AMER/EN/JSON/Historical/$(year)/$(crtfile)", "r")
-#         # s = String(Mmap.mmap(f));
-#         j = JSON.parse(f);
-#         close(f)
-#         dictByStories["totaltakes"] += length(j)
-#         for take in j
-#             sId, takeInfo = parseTRNAjson(take, datef)
-#             if sId in keys(dictByStories)
-#                 push!(dictByStories[sId], takeInfo)
-#             else
-#                 dictByStories[sId] = [takeInfo]
-#             end
-#         end
-#         j=0
-#     end
-# end
-#
-#
-# # Insert matching Archive bodies to corresponding news.
-# for year in ystart:yend
-#     @time for crtfile in readdir("/run/media/nicolas/OtherData/Reuters/News/Archives/Historical/RTRS_/$(year)/extracted")
-#         print("$crtfile \n")
-#         f = open("/run/media/nicolas/OtherData/Reuters/News/Archives/Historical/RTRS_/$(year)/extracted/$(crtfile)", "r")
-#         # s = String(Mmap.mmap(f));
-#         nArchive = JSON.parse(f)["Items"];
-#         close(f)
-#         for news in nArchive
-#             storyID = string(split(news["guid"], "-")[1], "_", split(news["guid"], "-")[3])
-#             if storyID in keys(dictByStories)
-#                 for take in dictByStories[storyID]
-#                     if "hasArchive" in keys(take)
-#                         if news["data"]["headline"] == take["headline"]
-#                             take["headlineArchive"] = news["data"]["headline"]
-#                         end
-#                         if length(news["data"]["body"])>length(take["bodyArchive"])
-#                             take["bodyArchive"] = news["data"]["body"]
-#                         end
-#                         if length(news["data"]["subjects"])>length(take["topicsArchive"])
-#                             take["topicsArchive"] = news["data"]["subjects"]
-#                         end
-#                     else
-#                         take["hasArchive"] = true
-#                         if news["data"]["headline"] == take["headline"]
-#                             take["headlineArchive"] = news["data"]["headline"]
-#                         end
-#                         take["bodyArchive"] = news["data"]["body"]
-#                         take["topicsArchive"] = news["data"]["subjects"]
-#                     end
-#                 end
-#             end
-#         end
-#     end
-# end
-#
-#
-# # Reorder news by permID
-# permidDict = Dict()
-# @time for (key, story) in dictByStories
-#     for take in story
-#         if "permId" in keys(take)
-#             permID = take["permId"]
-#             if permID in keys(permidDict)
-#                 if  key in keys(permidDict[permID])# this take is part of an existing story ==> append to it
-#                     push!(permidDict[permID][key], take)
-#                 else # This take is a new story
-#                     permidDict[permID][key] = [take]
-#                 end
-#             else
-#                 permidDict[permID] = Dict(key => [take])
-#             end
-#         else
-#             print("$take hey")
-#         end
-#     end
-# end
-#
-#
-# # Aggregate all news by stories
-# storyAggDict = Dict()
-# @time for (permid, stories) in permidDict
-#     for (storyID, takes) in stories
-#         if permid in keys(storyAggDict)
-#             push!(storyAggDict[permid], aggTakes(takes))
-#         else
-#             storyAggDict[permid] = [aggTakes(takes)]
-#         end
-#     end
-# end
-#
-#
-# # Load unique tds
-# if recomputeUniqueTDs
-#     uniqueVal()
-# end
-# JLD2.@load "/home/nicolas/Data/MongoDB Inputs/unique_date.jld2"
-# uniquedays = copy(uniquevals)
-#
-# # Assign td based on "firstCreated" for each story
-# for permid in keys(storyAggDict)
-#     for story in storyAggDict[permid]
-#         story["td"] = assignBucket(story["firstCreated"]+offsetNewsDay, uniquedays)
-#     end
-# end
-#
-# # Reorder all stories in a permid by td
-# permidTdDic = Dict()
-# @time for (permid, permidDic) in storyAggDict
-#     tdSet = []
-#     for story in permidDic
-#         push!(tdSet, story["td"])
-#     end
-#     tdSet = sort(collect(Set(tdSet)))
-#     permidTdDic[permid] = Dict()
-#     for td in tdSet
-#         permidTdDic[permid][td] = Dict{Any,Any}("stories"=>[])
-#     end
-#     for story in permidDic
-#         td = story["td"]
-#         push!(permidTdDic[permid][td]["stories"], story)
-#     end
-# end
-#
-#
-#
-#
-#
-#
-# print("Preparing final Dictionary \n")
-# dictByStories = nothing
-# storyAggDict = nothing
-# permidDic = nothing
-# GC.gc()
-#
-# permidTdDic, permidTdDic2 = splitDict(permidTdDic, 2)
-# try
-#     @time JLD2.@save "/home/nicolas/Data/ProvDBconstr/$(yend)permidTdDic2.jld2" permidTdDic2
-# catch
-#     using JLD
-#     @time JLD.save("/home/nicolas/Data/ProvDBconstr/$(yend)permidTdDic2.jld","permidTdDic2",permidTdDic2)
-# end
-# permidTdDic2 = nothing; GC.gc();
-# try
-#     @time JLD2.@save "/home/nicolas/Data/ProvDBconstr/$(yend)permidTdDic.jld2" permidTdDic
-# catch
-#     using JLD
-#     @time JLD.save("/home/nicolas/Data/ProvDBconstr/$(yend)permidTdDic.jld","permidTdDic",permidTdDic)
-# end
-# permidTdDic = nothing; GC.gc();
-#
-
 
 mtopics = ["AAA", "ACCI", "ALLCE", "BACT", "BKRFIG", "BKRT", "BONS", "BOSS1",
           "BUYB", "CASE1", "CEO1", "CFO1", "CHAIR1", "CLASS", "CM1", "CMPNY",
           "CNSL", "CORGOV", "CPROD", "DBTR", "DDEAL", "DEAL1", "DIV", "DVST",
-          "FIND1", "FINE1", "HOSAL", "IPO", "LAYOFS", "LIST1", "MEET1", "MNGISS",
-          "MONOP", "MRG", "NAMEC", "PRES1", "PRIV", "PRXF", "RECAP1", "RECLL",
-          "REORG", "SHPP", "SHRACT", "SISU", "SL1", "SPLITB",
-          "STAT", "STK", "XPAND"]
+          "FIND1", "FINE1", "HOSAL", "IPO", "JOB", "LAYOFS", "LIST1", "MCE",
+          "MEET1", "MNGISS", "MONOP", "MRG", "NAMEC", "PRES1", "PRIV", "PRXF",
+          "PS1", "RCH", "RECAP1", "RECLL", "REGS", "REORG", "SHPP", "SHRACT",
+          "SISU", "SL1", "SPLITB", "STAT", "STK", "XPAND"]
 # Compute sentiment aggregates, filtering by topic, novelty and relevance
-for i in 2
+for i in parsed_args["f"]
     print("This is Dict # $i \n")
     row = [0]
     if i==1
@@ -278,6 +126,16 @@ for i in 2
             permidTdDic[permid][td]["posSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
             permidTdDic[permid][td]["negSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
 
+            restruenov = computeTopicScores(permnoday, ("N2:RESF", true), ("N2:RES", false); novFilter=("nov24H",novthresh), relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
+            restruenov = computeTopicScores(permnoday, ("N2:RCH", true), ("N2:RES", true), ("N2:RESF", true); novFilter=("nov24H",novthresh), abjoin=|, relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
 
             ############## no rel thresh #######################
             rthresh = 0
@@ -312,6 +170,16 @@ for i in 2
             permidTdDic[permid][td]["posSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
             permidTdDic[permid][td]["negSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
 
+            restruenov = computeTopicScores(permnoday, ("N2:RESF", true), ("N2:RES", false); novFilter=("nov24H",novthresh), relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
+            restruenov = computeTopicScores(permnoday, ("N2:RCH", true), ("N2:RES", true), ("N2:RESF", true); novFilter=("nov24H",novthresh), abjoin=|, relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
             ############### no rel thresh  but multiply by relevance #######################
             rthresh = "smooth"
 
@@ -345,6 +213,15 @@ for i in 2
             permidTdDic[permid][td]["posSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
             permidTdDic[permid][td]["negSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
 
+            restruenov = computeTopicScores(permnoday, ("N2:RESF", true), ("N2:RES", false); novFilter=("nov24H",novthresh), relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
+            restruenov = computeTopicScores(permnoday, ("N2:RCH", true), ("N2:RES", true), ("N2:RESF", true); novFilter=("nov24H",novthresh), abjoin=|, relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
 
             ############### only new news #######################
             rthresh = 100
@@ -379,6 +256,16 @@ for i in 2
             permidTdDic[permid][td]["nS_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
             permidTdDic[permid][td]["posSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
             permidTdDic[permid][td]["negSum_RES_inc_RESF_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
+            restruenov = computeTopicScores(permnoday, ("N2:RESF", true), ("N2:RES", false); novFilter=("nov24H",novthresh), relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RESF_inc_RES_excl_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
+
+            restruenov = computeTopicScores(permnoday, ("N2:RCH", true), ("N2:RES", true), ("N2:RESF", true); novFilter=("nov24H",novthresh), abjoin=|, relthresh = rthresh)
+            permidTdDic[permid][td]["nS_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[1]
+            permidTdDic[permid][td]["posSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[2]
+            permidTdDic[permid][td]["negSum_RCH_RES_RESF_inc_nov24H_$(novthresh)_rel$(rthresh)"] = restruenov[3]
 
             for top in mtopics
                 restruenov = computeTopicScores(permnoday, ("N2:$(top)", true); novFilter=("nov24H",novthresh), relthresh = rthresh)
@@ -417,5 +304,3 @@ for i in 2
         end
     end
 end
-
-# match resulting data to MongoDB entries and update them

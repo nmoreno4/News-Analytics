@@ -1,7 +1,7 @@
 module WRDSdownload
 using RCall, DataFrames
 
-export CSdownload, CRSPdownload, linktabledownload, delistdownload, FF_factors_download
+export CSdownload, CRSPdownload, linktabledownload, delistdownload, FF_factors_download, GICdownload
 
 
 function FF_factors_download(daterange = ["01/01/2003", "12/31/2017"], datatable = "FACTORS_DAILY")
@@ -47,6 +47,29 @@ function CSdownload(daterange = ["01/01/2003", "12/31/2017"], CSvariables = "gvk
                               and popsrc='D'
                               and consol='C'
                               and datadate between '\", daterange[1], \"' and '\", daterange[2], \"'\"))"
+    print("lol")
+    R"compustat <- DBI::dbFetch(res, n=-1)"
+    R"DBI::dbClearResult(res)"
+    R"DBI::dbDisconnect(wrds)"
+    @rget compustat
+    return compustat
+end
+
+
+
+function GICdownload()
+    R"library(RPostgres)"
+    R"library(DBI)"
+    R"wrds <- DBI::dbConnect(RPostgres::Postgres(),
+                      host='wrds-pgdata.wharton.upenn.edu',
+                      port=9737,
+                      user='mlam',
+                      password='M@riel@mbertu193807',
+                      sslmode='require',
+                      dbname='wrds')"
+    R"res <- DBI::dbSendQuery(wrds, paste(\"SELECT a.gvkey, a.gsector, a.indfrom, a.indthru, a.gsubind, a.indtype, b.gicdesc
+                              FROM comp.co_hgic a, comp.r_giccd b
+                              WHERE a.gsector=b.giccd and b.gictype='GSECTOR'\"))"
     print("lol")
     R"compustat <- DBI::dbFetch(res, n=-1)"
     R"DBI::dbClearResult(res)"
