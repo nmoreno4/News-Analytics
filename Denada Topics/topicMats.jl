@@ -126,3 +126,19 @@ delete!(statDict, "topicCounts")
 statDF = DataFrame(statDict)
 statDF[:topic] = topics
 CSV.write("/home/nicolas/Documents/Paper Denada/summaryStats.csv", statDF)
+
+topicCounts
+topicRes = Dict(10=>[],15=>[],20=>[],25=>[],30=>[],35=>[],40=>[],45=>[],50=>[],55=>[],missing=>[])
+
+for dic in topicCounts
+    for k in keys(topicRes)
+        try
+            push!(topicRes[k], dic[k])
+        catch
+            push!(topicRes[k], missing)
+        end
+    end
+end
+topicRes = DataFrame(topicRes)
+topicRes[:topic] = topics
+CSV.write("/home/nicolas/Documents/Paper Denada/topicCounts.csv", DataFrame(topicRes))
