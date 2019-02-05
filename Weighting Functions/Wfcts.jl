@@ -78,8 +78,10 @@ function everyDayWeights(crtdf, WS; meCol=:me, stockCol=:permno, dateCol=:date)
        elseif WS=="VW"
            res[:W] = xdf[:,meCol] ./ sum(skipmissing(xdf[:,meCol]))
        end
+       res[stockCol] = xdf[stockCol]
        DataFrame(res)
    end
+   sort!(result, [stockCol, dateCol])
    return result[:W]
 end
 
