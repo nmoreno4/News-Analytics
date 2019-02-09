@@ -21,15 +21,17 @@ retTypes = [Int128, DateTime, Float64, Int8, Int8, Int8, Float64, Float64, Float
             Float64, Float64, Float64,
             Float64, Float64, Float64]
 
-retVars = ["permno", "date","me"]
-retTypes = [Int128, DateTime, Float64]
 retDic = Dict(zip(retVars, [1 for i in retVars]))
 nbItems = @time collection[:find](Dict("date"=> Dict("\$gte"=> startDate, "\$lte"=> endDate)))[:count]()
 cursor = collection[:find](Dict("date"=> Dict("\$gte"=> startDate, "\$lte"=> endDate)), retDic)
 retDic = Dict(zip(retVars, [Array{Union{T,Missing}}(undef,nbItems) for T in retTypes]))
 cc = [0]
+sTime = now()
 @time for doc in cursor
     cc[1]+=1
+    if cc[1] in 1:50000:nbItems
+        print("Advancement: $(round(100*cc[1]/nbItems, 2))%  -  $(Dates.canonicalize(Dates.CompoundPeriod(now()-sTime))) \n")
+    end
     el = Dict(doc)
     for var in retVars
         try
@@ -85,9 +87,12 @@ deletecols!(X, :prc)
 end
 sort!(a, [:permno, :date])
 deletecols!(a, [:permno, :date])
-X = hcat(X,a)nS_RES_inc_RESF_excl_nov24H_0_rel100
+X = hcat(X,a)
 
 X[:EAD] = replace(X[:EAD], missing=>0)
+###
+#!!! Add around EAD [-1,+1]
+###
 X[:nS_nov24H_0_rel100] = replace(X[:nS_nov24H_0_rel100], missing=>0)
 X[:NDay] = 0
 for row in 1:size(X,1)
@@ -282,6 +287,10 @@ X[:ymonth] = yearmonth.(X[:date])
     totnews = sum(skipmissing(xdf[:nS_RES_inc_RESF_excl_nov24H_0_rel100]))
     res[:sentRESM] = (pos-neg)/totnews
     res[:rankbm] = xdf[:rankbm][end]
+    res[:retM] = cumret(xdf[:retadj])
+    # Sum of EAD and news
+    res[:EADM] = sum(skipmissing(xdf[:EAD]))
+    res[:covM] = totnews
     DataFrame(res)
 end
 a[:sentM] = replace(a[:sentM], NaN=>missing); a[:sentRESM] = replace(a[:sentRESM], NaN=>missing)
@@ -293,10 +302,31 @@ a[:sentM] = replace(a[:sentM], NaN=>missing); a[:sentRESM] = replace(a[:sentRESM
     res[:sentM_GRO] = mean(skipmissing(grodf[:sentM]))
     res[:sentRESM_VAL] = mean(skipmissing(valdf[:sentRESM]))
     res[:sentRESM_GRO] = mean(skipmissing(grodf[:sentRESM]))
+    # Val and GRO return
+    res[:retM_VAL] = mean(skipmissing(valdf[:retM]))
+    res[:retM_GRO] = mean(skipmissing(grodf[:retM]))
+    res[:covM_VAL] = mean(skipmissing(valdf[:covM]))
+    res[:covM_GRO] = mean(skipmissing(grodf[:covM]))
     DataFrame(res)
 end
+@time c = by(a, :permno) do xdf
+    res = Dict()
+    # lagged monthly return
+    res[:f1_retM] = lead(xdf[:retM])
+    res[:ymonth] = xdf[:ymonth]
+    DataFrame(res)
+end
+sort!(c, [:permno, :ymonth])
+sort!(a, [:permno, :ymonth])
+deletecols!(c, [:permno, :ymonth])
+a = hcat(a, c)
 
-X = join(X, b, on=[:ymonth], kind=:left)
+a = join(a, b, on=:ymonth, kind=:left)
+a[:sentM_HML] = a[:sentM_VAL] .- a[:sentM_GRO]
+a[:sentRESM_HML] = a[:sentRESM_VAL] .- a[:sentRESM_GRO]
+a[:covM_HML] = a[:covM_VAL] .- a[:covM_GRO]
+
+X = join(X, a, on=[:ymonth], kind=:left)
 
 
 function my_latex_estim_decoration(s::String, pval::Float64)
@@ -306,13 +336,13 @@ function my_latex_estim_decoration(s::String, pval::Float64)
   if (pval > 0.1)
       return "$s"
   elseif (pval > 0.05)
-      return "$s\\sym{*}"
+      return "$s\$^{***}\$"
   elseif (pval > 0.01)
-      return "$s\\sym{**}"
+      return "$s\$^{***}\$"
   elseif (pval > 0.001)
-      return "$s\\sym{***}"
+      return "$s\$^{***}\$"
   else
-      return "$s\\sym{***}"
+      return "$s\$^{***}\$"
   end
 end
 
@@ -390,8 +420,23 @@ m3 = @time reg(X, @model(retadj ~ rankbm*EAD + rankbm*NDay + rankbm*HML*EAD + ra
 regtable(m1, m2, m3; renderSettings = latexOutput("/home/nicolas/Documents/Engelberg/Risk.tex"), below_statistic=:tstat,
                          estim_decoration = my_latex_estim_decoration, estimformat="%0.5f")
 
-# Month forecast
-regtable(m1, m2, m3; renderSettings = asciiOutput("/home/nicolas/Documents/Engelberg/prov.txt"), below_statistic=:tstat, estimformat="%0.5f")
+# Month forecast (NB: if I include rankbm*sentM I obtain the same coefficients for the rest)
+a[:MonthCategorical] = categorical(a[:ymonth])
+m0 = @time reg(a, @model(retM ~ rankbm*sentM_HML +  rankbm*covM_HML + rankbm*EADM + rankbm*covM, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m1 = @time reg(a, @model(retM ~ rankbm*sentM_HML +  rankbm*covM_HML, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m2 = @time reg(a, @model(f1_retM ~ rankbm*sentM_HML +  rankbm*covM_HML, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m3 = @time reg(a, @model(retM ~ rankbm*sentRESM_HML +  rankbm*covM_HML, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m4 = @time reg(a, @model(f1_retM ~ rankbm*sentRESM_HML +  rankbm*covM_HML, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m5 = @time reg(a, @model(retM ~ rankbm*sentM_GRO +  rankbm*covM_GRO + rankbm*sentM_VAL + rankbm*covM_VAL, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+m6 = @time reg(a, @model(f1_retM ~ rankbm*sentM_GRO +  rankbm*covM_GRO + rankbm*sentM_VAL + rankbm*covM_VAL, fe = MonthCategorical, vcov = cluster(MonthCategorical)))
+regtable(m0, m1, m2, m3, m4, m5, m6, m7; renderSettings = latexOutput("/home/nicolas/Documents/Engelberg/Monthly.tex"), below_statistic=:tstat,
+                         estim_decoration = my_latex_estim_decoration, estimformat="%0.5f")
+
+
+regtable(m0, m1, m2, m3, m4, m5, m6; renderSettings = asciiOutput("/home/nicolas/Documents/Engelberg/prov.txt"), below_statistic=:tstat, estimformat="%0.5f")
+
+
+
 
 
 
