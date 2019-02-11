@@ -32,7 +32,7 @@ trueend = Dates.Date(2017,12,31)
 # naicsh:
 #############################################################
 CSvariables = "gvkey, datadate, cusip, at, ceq, lt, seq, txditc, pstkrv,
-               pstkl, pstk, tic, conm, cik, naicsh, indfmt"
+               pstkl, pstk, tic, conm, cik, naicsh, indfmt, ebitda"
 CSdatatable = "comp.funda"
 ############## CRSP Variable description ##############
 # ret:
@@ -88,7 +88,7 @@ end
 sort!(CSdf, [:gvkey, :datadate])
 CSdf[:count] = by(CSdf, :gvkey, x1 = :year => x -> running(length, x, length(x)))[:x1]
 # Keep only variables we will use later
-CSdf=CSdf[[:gvkey,:datadate,:year,:be,:count,:tic,:conm,:at,:lt,:naicsh,:cik, :indfmt]]
+CSdf=CSdf[[:gvkey,:datadate,:year,:be,:count,:tic,:conm,:at,:lt,:naicsh,:cik, :indfmt, :ebitda]]
 
 
 
@@ -205,7 +205,7 @@ ccm1[:jdate] = ceil.(ccm1[:yearend] .+ Dates.Month(6) .+ Dates.Day(1), Dates.Mon
 # set link date bounds
 jdateInBounds = findall((replace(ccm1[:jdate].>=ccm1[:linkdt], missing=>false)) .& (replace(ccm1[:jdate].<=ccm1[:linkenddt], missing=>false)))
 ccm2 = ccm1[jdateInBounds,:]
-ccm2=ccm2[[:gvkey,:permno,:datadate,:yearend,:jdate,:be,:count,:tic,:conm,:at,:lt,:naicsh,:cik,:indfmt]]
+ccm2=ccm2[[:gvkey,:permno,:datadate,:yearend,:jdate,:be,:count,:tic,:conm,:at,:lt,:naicsh,:cik,:indfmt, :ebitda]]
 ccm2[:gvkey] = parse.(Int, ccm2[:gvkey])
 
 #########################
@@ -323,7 +323,7 @@ for row in eachrow(monthlyMerge)
         row[:posbm] = 1
     end
 end
-monthlyMerge = monthlyMerge[monthlyMerge[:posbm].==1, :]
+monthlyMerge = monthlyMerge[monthlyMerge[:posbm].==0, :rankbm]
 monthlyMerge = monthlyMerge[.!ismissing.(monthlyMerge[:wt]).>=1, :]
 monthlyMerge = monthlyMerge[.!ismissing.(monthlyMerge[:rankbm]), :]
 monthlyMerge=monthlyMerge[findall(x -> x in [10,11], monthlyMerge[:shrcd]), :]
@@ -339,9 +339,9 @@ monthlyMerge = monthlyMerge[monthlyMerge[:date].>=truestart, :]
 monthlyMerge = monthlyMerge[monthlyMerge[:date].<=trueend, :]
 
 monthlyMerge = monthlyMerge[[:permno, :gvkey, :permid, :ymonth, :prc, :vol, :spread, :retadj, :me,
-                             :wt, :conm, :at, :lt, :naicsh, :beme, :ranksize, :rankbm,:indfmt]]
+                             :wt, :conm, :at, :lt, :naicsh, :beme, :shrcd, :ranksize, :rankbm, :ebitda]]
 names!(monthlyMerge, [:permno, :gvkey, :permid, :ymonth, :prcM, :volM, :spreadM, :retadjM, :meM,
-                      :wt, :conm, :atY, :ltY, :naicshY, :bemeY, :ranksize, :rankbm,:indfmt])
+                      :wt, :conm, :atY, :ltY, :naicshY, :bemeY, :shrcd, :ranksize2, :rankbm2, :ebitda])
 
 
 ##########################################
