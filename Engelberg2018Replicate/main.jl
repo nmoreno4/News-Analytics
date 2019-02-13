@@ -340,9 +340,9 @@ function my_latex_estim_decoration(s::String, pval::Float64)
   if (pval > 0.1)
       return "$s"
   elseif (pval > 0.05)
-      return "$s\$^{***}\$"
+      return "$s\$^{*}\$"
   elseif (pval > 0.01)
-      return "$s\$^{***}\$"
+      return "$s\$^{**}\$"
   elseif (pval > 0.001)
       return "$s\$^{***}\$"
   else
