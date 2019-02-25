@@ -56,7 +56,7 @@ sTime = now()
     end
 end
 
-
+retDic = DataFrame(retDic)
 retDic[:sent] = (retDic[:posSum_nov24H_0_rel100] .- retDic[:negSum_nov24H_0_rel100]) ./ retDic[:nS_nov24H_0_rel100]
 
 # for k in keys(retDic)
@@ -267,6 +267,110 @@ end
 
 
 
+using StatsBase, HypothesisTests, Plots, CSV
+for clag in 2:10
+    autocorDict = Dict(:propOfLBtest_NOautocorr_sent=>[], :propOfLBtest_NOautocorr_neg=>[], :propOfLBtest_NOautocorr_pos=>[],
+                       :AC_mean_sent=>[], :AC_std_sent=>[], :AC_mean_neg=>[], :AC_std_neg=>[], :AC_mean_pos=>[], :AC_std_pos=>[],
+                       :JB_sent=>[], :JB_neg=>[],:JB_pos=>[], :topic=>[])
+    for topic in [topics; "ALL"]
+        print(topic)
+        @time if topic == "ALL"
+            cdf = df[findall(df[:nS_nov24H_0_rel100].>0),[:permno, :date, :sent, :scaledNeg, :scaledPos]]
+        else
+            cdf = df[.!ismissing.(df[Symbol(topic)]),:]
+        end
+        @time sort!(cdf, [:permno, :date])
+        a = by(cdf, :permno) do xdf
+            res = Dict()
+            if length(xdf[:sent])>clag
+                res["sent_ac"] = cor(Float64.(collect(skipmissing(xdf[:sent][1+clag:end]))), Float64.(xdf[:sent])[1:end-clag])
+                res["neg_ac"] = cor(Float64.(collect(skipmissing(xdf[:scaledNeg][1+clag:end]))), Float64.(xdf[:scaledNeg])[1:end-clag])
+                res["pos_ac"] = cor(Float64.(collect(skipmissing(xdf[:scaledPos][1+clag:end]))), Float64.(xdf[:scaledPos])[1:end-clag])
+                res["LBpval_sent"] = pvalue(LjungBoxTest(Float64.(collect(skipmissing(xdf[:sent]))), clag))
+                res["LBpval_neg"] = pvalue(LjungBoxTest(Float64.(collect(skipmissing(xdf[:scaledNeg]))), clag))
+                res["LBpval_pos"] = pvalue(LjungBoxTest(Float64.(collect(skipmissing(xdf[:scaledPos]))), clag))
+            else
+                res["sent_ac"] = missing
+                res["neg_ac"] = missing
+                res["pos_ac"] = missing
+                res["LBpval_sent"] = missing
+                res["LBpval_neg"] = missing
+                res["LBpval_pos"] = missing
+            end
+            # res["neg_ac"] = autocor(Float64.(xdf[:scaledNeg]))
+            # res["pos_ac"] = autocor(Float64.(xdf[:scaledPos]))
+            DataFrame(res)
+        end
+
+        try
+            push!(autocorDict[:propOfLBtest_NOautocorr_sent], sum(skipmissing(a[:LBpval_sent].<=0.05))/length(collect(skipmissing(a[:LBpval_sent]))))
+        catch
+            push!(autocorDict[:propOfLBtest_NOautocorr_sent], missing)
+        end
+        try
+            push!(autocorDict[:propOfLBtest_NOautocorr_neg], sum(skipmissing(a[:LBpval_neg].<=0.05))/length(collect(skipmissing(a[:LBpval_neg]))))
+        catch
+            push!(autocorDict[:propOfLBtest_NOautocorr_neg], missing)
+        end
+        try
+            push!(autocorDict[:propOfLBtest_NOautocorr_pos], sum(skipmissing(a[:LBpval_pos].<=0.05))/length(collect(skipmissing(a[:LBpval_pos]))))
+        catch
+            push!(autocorDict[:propOfLBtest_NOautocorr_pos], missing)
+        end
+        try
+            push!(autocorDict[:AC_mean_sent], mean(skipmissing(replace(a[:sent_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_mean_sent], missing)
+        end
+        try
+            push!(autocorDict[:AC_std_sent], std(skipmissing(replace(a[:sent_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_std_sent], missing)
+        end
+        try
+            push!(autocorDict[:AC_mean_neg], mean(skipmissing(replace(a[:neg_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_mean_neg], missing)
+        end
+        try
+            push!(autocorDict[:AC_std_neg], std(skipmissing(replace(a[:neg_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_std_neg], missing)
+        end
+        try
+            push!(autocorDict[:AC_mean_pos], mean(skipmissing(replace(a[:pos_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_mean_pos], missing)
+        end
+        try
+            push!(autocorDict[:AC_std_pos], std(skipmissing(replace(a[:pos_ac], NaN=>missing))))
+        catch
+            push!(autocorDict[:AC_std_pos], missing)
+        end
+        try
+            push!(autocorDict[:JB_sent], pvalue(JarqueBeraTest(collect(skipmissing(replace(a[:sent_ac], NaN=>missing))))))
+        catch
+            push!(autocorDict[:JB_sent], missing)
+        end
+        try
+            push!(autocorDict[:JB_neg], pvalue(JarqueBeraTest(collect(skipmissing(replace(a[:neg_ac], NaN=>missing))))))
+        catch
+            push!(autocorDict[:JB_neg], missing)
+        end
+        try
+            push!(autocorDict[:JB_pos], pvalue(JarqueBeraTest(collect(skipmissing(replace(a[:pos_ac], NaN=>missing))))))
+        catch
+            push!(autocorDict[:JB_pos], missing)
+        end
+        try
+            push!(autocorDict[:topic], topic)
+        catch
+            push!(autocorDict[:topic], missing)
+        end
+    end
+    CSV.write("/home/nicolas/Documents/Paper Denada/Autocorr/autocorr_l$(clag)", DataFrame(autocorDict))
+end
+
 #### Pos days vs neg days
 df[:scaledNeut] = 1 .- df[:scaledPos] .- df[:scaledNeg]
 df[:negDay] = 0
@@ -283,7 +387,6 @@ for row in 1:size(df,1)
         end
     end
 end
-
 df[:newNeg] = Array{Union{Float64,Missing}}(undef,size(df,1))
 df[:newPos] = Array{Union{Float64,Missing}}(undef,size(df,1))
 for row in 1:size(df,1)
@@ -293,8 +396,6 @@ for row in 1:size(df,1)
         df[row, :newNeg] = df[row, :scaledNeg]
     end
 end
-
-
 #### Standardize variables
 df[:year] = Dates.year.(df[:date])
 @time a = by(df, :year) do xdf

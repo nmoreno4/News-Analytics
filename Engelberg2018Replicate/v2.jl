@@ -48,16 +48,16 @@ function convertPyArray(X, colnames)
     return X
 end
 
-function queryStepWise(myqueries, retvalues)
+function queryStepWiseDF(myqueries, retvalues, saveFunc=py"cursordf")
     retDic = Dict(zip(retvalues, [1 for i in retvalues]))
     cursor = collection[:find](myqueries[1], retvalues)
-    @time X, y = py"cursordf"(cursor)
+    @time X, y = saveFunc(cursor)
     colnames = convert.(Symbol, y)
     @time X = convertPyArray(X, colnames)
     for i in 2:length(myqueries)
         print(myqueries[i])
         cursor = collection[:find](myqueries[i], retvalues)
-        @time X2, y = py"cursordf"(cursor)
+        @time X2, y = saveFunc(cursor)
         colnames = convert.(Symbol, y)
         @time X2 = convertPyArray(X2, colnames)
         X = vcat(X, X2)
@@ -74,9 +74,8 @@ myquery = [Dict("date"=> Dict("\$gt"=> date1, "\$lte"=> date2)) for (date1, date
 retvalues = ["date", "permno", "retadj", "volume", "me", "ranksize", "rankbm", "EAD", "prc",
              "nS_nov24H_0_rel100", "posSum_nov24H_0_rel100", "negSum_nov24H_0_rel100",
              "nS_RES_inc_RESF_excl_nov24H_0_rel100", "posSum_RES_inc_RESF_excl_nov24H_0_rel100", "negSum_RES_inc_RESF_excl_nov24H_0_rel100",
-             "nS_RESF_inc_nov24H_0_rel100", "posSum_RESF_inc_nov24H_0_rel100", "negSum_RESF_inc_nov24H_0_rel100",
-             "nS_RES_excl_RESF_excl_nov24H_0_rel100", "posSum_RES_excl_RESF_excl_nov24H_0_rel100", "negSum_RES_excl_RESF_excl_nov24H_0_rel100"]
-X = @time queryStepWise(myquery, retvalues)
+             "nS_RESF_inc_nov24H_0_rel100", "posSum_RESF_inc_nov24H_0_rel100", "negSum_RESF_inc_nov24H_0_rel100"]
+X = @time queryStepWiseDF(myquery, retvalues)
 @time sort!(X, [:permno, :date])
 
 
@@ -508,8 +507,8 @@ end
 using FixedEffectModels, RegressionTables
 X[:DateCategorical] = categorical(X[:date])
 X[:SENT_ALL_] = (replace(X[:SENT_ALL], missing=>0) .- mean(skipmissing(X[:SENT_ALL]))) ./ std(skipmissing(X[:SENT_ALL]))
-X[:POS_ALL_] = (replace(X[:POS_ALL_], missing=>0) .- mean(skipmissing(X[:POS_ALL_]))) ./ std(skipmissing(X[:POS_ALL_]))
-X[:NEG_ALL_] = (replace(X[:NEG_ALL_], missing=>0) .- mean(skipmissing(X[:NEG_ALL_]))) ./ std(skipmissing(X[:NEG_ALL_]))
+X[:POS_ALL_] = (replace(X[:POS_ALL], missing=>0) .- mean(skipmissing(X[:POS_ALL]))) ./ std(skipmissing(X[:POS_ALL]))
+X[:NEG_ALL_] = (replace(X[:NEG_ALL], missing=>0) .- mean(skipmissing(X[:NEG_ALL]))) ./ std(skipmissing(X[:NEG_ALL]))
 X[:ret] = X[:retadj] .* 100
 
 # Baseline
@@ -522,35 +521,35 @@ regtable(m1, m2, m3, m4; renderSettings = asciiOutput("/home/nicolas/Documents/E
 
 
 # Setiment interaction BM
-# m1a = @time reg(X, @model(ret ~ VAL*a_EAD + VAL*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m1b = @time reg(X, @model(ret ~ GRO*a_EAD + GRO*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
-m1 = @time reg(X, @model(ret ~ VAL + GRO + a_EAD + NDay + VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2a = @time reg(X, @model(ret ~ VAL + GRO + a_EAD + NDay + VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&a_EAD&SENT_ALL_  + GRO&a_EAD&SENT_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2b = @time reg(X, @model(ret ~ VAL + GRO + a_EAD + NDay + VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&a_EAD&SENT_ALL_  + GRO&a_EAD&SENT_ALL_
+# m1a = @time reg(X, @model(ret ~ VAL*EAD + VAL*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m1b = @time reg(X, @model(ret ~ GRO*EAD + GRO*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
+m1 = @time reg(X, @model(ret ~ VAL + GRO + EAD + NDay + VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
+m2a = @time reg(X, @model(ret ~ VAL + GRO + EAD + NDay + VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&EAD&SENT_ALL_  + GRO&EAD&SENT_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+m2b = @time reg(X, @model(ret ~ VAL + GRO + EAD + NDay + VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&EAD&SENT_ALL_  + GRO&EAD&SENT_ALL_
                                 + NDayRES + NDayRES&SENT_ALL_ + NDayRES&SENT_ALL_&GRO + NDayRES&SENT_ALL_&VAL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2c = @time reg(X, @model(ret ~ VAL + GRO + a_EAD + NDay + VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&a_EAD&SENT_ALL_  + GRO&a_EAD&SENT_ALL_
+m2c = @time reg(X, @model(ret ~ VAL + GRO + EAD + NDay + VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&EAD&SENT_ALL_  + GRO&EAD&SENT_ALL_
                                 + NDayRESF + NDayRESF&SENT_ALL_ + NDayRESF&SENT_ALL_&GRO + NDayRESF&SENT_ALL_&VAL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2d = @time reg(X, @model(ret ~ VAL + GRO + a_EAD + NDay + VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&a_EAD&SENT_ALL_  + GRO&a_EAD&SENT_ALL_
+m2d = @time reg(X, @model(ret ~ VAL + GRO + EAD + NDay + VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + SENT_ALL_ + SENT_ALL_&EAD + VAL&SENT_ALL_ + GRO&SENT_ALL_ + VAL&EAD&SENT_ALL_  + GRO&EAD&SENT_ALL_
                                 + NDayOTHER + NDayOTHER&SENT_ALL_ + NDayOTHER&SENT_ALL_&GRO + NDayOTHER&SENT_ALL_&VAL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m3 = @time reg(X, @model(ret ~ VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + VAL*a_EAD*POS_ALL_  + GRO*a_EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m4 = @time reg(X, @model(ret ~ VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + VAL*a_EAD*NEG_ALL_ + GRO*a_EAD*NEG_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m5 = @time reg(X, @model(ret ~ VAL&a_EAD + GRO&a_EAD + VAL&NDay + GRO&NDay + VAL*a_EAD*NEG_ALL_ + GRO*a_EAD*NEG_ALL_ + VAL*a_EAD*POS_ALL_  + GRO*a_EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m3 = @time reg(X, @model(ret ~ VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + VAL*EAD*POS_ALL_  + GRO*EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m4 = @time reg(X, @model(ret ~ VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + VAL*EAD*NEG_ALL_ + GRO*EAD*NEG_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m5 = @time reg(X, @model(ret ~ VAL&EAD + GRO&EAD + VAL&NDay + GRO&NDay + VAL*EAD*NEG_ALL_ + GRO*EAD*NEG_ALL_ + VAL*EAD*POS_ALL_  + GRO*EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
 regtable(m1, m2a, m2b, m2c, m2d; renderSettings = asciiOutput("/home/nicolas/Documents/Engelberg/sentimentBM.txt"), below_statistic=:tstat,
                          estim_decoration = my_latex_estim_decoration, estimformat="%0.3f")
 
 # Sentiment interaction Size
-# m1b = @time reg(X, @model(ret ~ BIG*a_EAD + BIG*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
-m1 = @time reg(X, @model(ret ~ SMALL + BIG + a_EAD + NDay + SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2a = @time reg(X, @model(ret ~ SMALL + BIG + a_EAD + NDay + SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&a_EAD&SENT_ALL_  + BIG&a_EAD&SENT_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2b = @time reg(X, @model(ret ~ SMALL + BIG + a_EAD + NDay + SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&a_EAD&SENT_ALL_  + BIG&a_EAD&SENT_ALL_
+# m1b = @time reg(X, @model(ret ~ BIG*EAD + BIG*NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
+m1 = @time reg(X, @model(ret ~ SMALL + BIG + EAD + NDay + SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay, fe = DateCategorical, vcov = cluster(DateCategorical)))
+m2a = @time reg(X, @model(ret ~ SMALL + BIG + EAD + NDay + SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&EAD&SENT_ALL_  + BIG&EAD&SENT_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+m2b = @time reg(X, @model(ret ~ SMALL + BIG + EAD + NDay + SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&EAD&SENT_ALL_  + BIG&EAD&SENT_ALL_
                                 + NDayRES + NDayRES&SENT_ALL_ + NDayRES&SENT_ALL_&BIG + NDayRES&SENT_ALL_&SMALL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2c = @time reg(X, @model(ret ~ SMALL + BIG + a_EAD + NDay + SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&a_EAD&SENT_ALL_  + BIG&a_EAD&SENT_ALL_
+m2c = @time reg(X, @model(ret ~ SMALL + BIG + EAD + NDay + SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&EAD&SENT_ALL_  + BIG&EAD&SENT_ALL_
                                 + NDayRESF + NDayRESF&SENT_ALL_ + NDayRESF&SENT_ALL_&BIG + NDayRESF&SENT_ALL_&SMALL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-m2d = @time reg(X, @model(ret ~ SMALL + BIG + a_EAD + NDay + SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&a_EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&a_EAD&SENT_ALL_  + BIG&a_EAD&SENT_ALL_
+m2d = @time reg(X, @model(ret ~ SMALL + BIG + EAD + NDay + SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SENT_ALL_ + SENT_ALL_&EAD + SMALL&SENT_ALL_ + BIG&SENT_ALL_ + SMALL&EAD&SENT_ALL_  + BIG&EAD&SENT_ALL_
                                 + NDayOTHER + NDayOTHER&SENT_ALL_ + NDayOTHER&SENT_ALL_&BIG + NDayOTHER&SENT_ALL_&SMALL , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m3 = @time reg(X, @model(ret ~ SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SMALL*a_EAD*POS_ALL_  + BIG*a_EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m4 = @time reg(X, @model(ret ~ SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SMALL*a_EAD*NEG_ALL_ + BIG*a_EAD*NEG_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
-# m5 = @time reg(X, @model(ret ~ SMALL&a_EAD + BIG&a_EAD + SMALL&NDay + BIG&NDay + SMALL*a_EAD*NEG_ALL_ + BIG*a_EAD*NEG_ALL_ + SMALL*a_EAD*POS_ALL_  + BIG*a_EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m3 = @time reg(X, @model(ret ~ SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SMALL*EAD*POS_ALL_  + BIG*EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m4 = @time reg(X, @model(ret ~ SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SMALL*EAD*NEG_ALL_ + BIG*EAD*NEG_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
+# m5 = @time reg(X, @model(ret ~ SMALL&EAD + BIG&EAD + SMALL&NDay + BIG&NDay + SMALL*EAD*NEG_ALL_ + BIG*EAD*NEG_ALL_ + SMALL*EAD*POS_ALL_  + BIG*EAD*POS_ALL_ , fe = DateCategorical, vcov = cluster(DateCategorical)))
 regtable(m1, m2a, m2b, m2c, m2d; renderSettings = asciiOutput("/home/nicolas/Documents/Engelberg/sentimentSIZE.txt"), below_statistic=:tstat,
                          estim_decoration = my_latex_estim_decoration, estimformat="%0.3f")
 
