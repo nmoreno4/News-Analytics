@@ -8,48 +8,44 @@ db = client["Jan2019"]
 collection = db["PermnoDay"]
 pydatetime = pyimport("datetime")
 
+
 py"""
 import numpy as np
 import pandas as pd
 import pymongo
-
-client = pymongo.MongoClient()
-db = client["Jan2019"]
-collection = db["PermnoDay"]
-import datetime
-
 def cursordf(x):
     df = pd.DataFrame(list(x))
-    print(type(df))
-    print(type(df.values))
-    return (df.values, df.columns.values)
+    return (df, df.columns.values)
 """
-
 
 
 function convertPyArray(X, colnames)
     res = Dict()
     finalnames = Symbol[]
-    print(colnames)
+    print("length : $(length(colnames))")
     for i in 1:length(colnames)
-        if !(colnames[i] in [:date, :gsector, :permno]) && String(colnames[i])[1:2]!="nS"
-            print(py"X[:,$i]")
-            res[colnames[i]] = replace(convert(Array{Union{Missing,Float64}}, py"X[:,$i]"), NaN=>missing)
+        print(get(X, PyArray, String(colnames[i])))
+        if !(colnames[i] in [:_id, :date, :gsector, :permno]) && String(colnames[i])[1:2]!="nS"
+            try
+                res[colnames[i]] = replace(convert(Array{Union{Missing,Float64}}, get(X, String(colnames[i]))), NaN=>missing)
+            catch err
+                error(err)
+            end
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:date]
-            res[colnames[i]] = convert(Array{DateTime}, py"X[:,$i]")
+            res[colnames[i]] = convert(Array{DateTime}, get(X, String(colnames[i])))
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:gsector]
-            res[colnames[i]] = replace(convert(Array{Any}, py"X[:,$i]"), NaN=>missing)
+            res[colnames[i]] = replace(convert(Array{Any}, get(X, String(colnames[i]))), NaN=>missing)
             push!(finalnames, colnames[i])
         elseif String(colnames[i])[1:2]=="nS"
-            res[colnames[i]] = convert(Array{Union{Missing,UInt16}}, replace(convert(Array{Float64},py"X[:,$i]"), NaN=>missing))
+            res[colnames[i]] = convert(Array{Union{Missing,UInt16}}, replace(convert(Array{Float64},get(X, String(colnames[i]))), NaN=>missing))
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:permno]
-            res[colnames[i]] = convert(Array{Int}, py"X[:,$i]")
+            res[colnames[i]] = convert(Array{Int}, get(X, String(colnames[i])))
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:ranksize, :rankbm, :EAD]
-            res[colnames[i]] = convert(Array{Union{Missing,Int8}}, replace(convert(Array{Float64},py"X[:,$i]"), NaN=>missing))
+            res[colnames[i]] = convert(Array{Union{Missing,Int8}}, replace(convert(Array{Float64},get(X, String(colnames[i]))), NaN=>missing))
             push!(finalnames, colnames[i])
         end
     end
@@ -60,17 +56,13 @@ end
 
 function queryStepWiseDF(myqueries, retvalues, saveFunc=py"cursordf")
     retDic = Dict(zip(retvalues, [1 for i in retvalues]))
-    firstquery = myqueries[1]
-    py"""
-    cursor = collection.find($firstquery, $retDic)
-    print("LOL")
-    X, y = cursordf(cursor)
-    """
-    colnames = Symbol.(py"y")
-    @time X = convertPyArray(py"X", colnames)
+    cursor = collection[:find](myqueries[1], retvalues)
+    @time X, y = saveFunc(cursor)
+    colnames = Symbol.(X)
+    @time X = convertPyArray(X, colnames)
     for i in 2:length(myqueries)
         print(myqueries[i])
-        cursor = collection[:find](myqueries[i], retvalues)
+        cursor = collection.find(myqueries[i], retvalues)
         @time X2, y = saveFunc(cursor)
         colnames = convert.(Symbol, y)
         @time X2 = convertPyArray(X2, colnames)
@@ -78,6 +70,20 @@ function queryStepWiseDF(myqueries, retvalues, saveFunc=py"cursordf")
     end
     return X
 end
+
+monthrange = Month(3)
+y1 = Dates.DateTime(2002,12,31):monthrange:Dates.DateTime(2017,12,31)-monthrange
+y2 = Dates.DateTime(2002,12,31)+monthrange:monthrange:Dates.DateTime(2017,12,31)
+dateranges = [(y1, y2) for (y1, y2) in zip(y1, y2)]
+myquery = [Dict("date"=> Dict("\$gt"=> date1, "\$lte"=> date2)) for (date1, date2) in dateranges]
+# query = {"td": {"$gte": 3750}}
+retvalues = ["date", "permno", "retadj", "volume", "me", "ranksize", "rankbm", "EAD", "prc",
+             "nS_nov24H_0_rel100", "posSum_nov24H_0_rel100", "negSum_nov24H_0_rel100",
+             "nS_RES_inc_RESF_excl_nov24H_0_rel100", "posSum_RES_inc_RESF_excl_nov24H_0_rel100", "negSum_RES_inc_RESF_excl_nov24H_0_rel100",
+             "nS_RESF_inc_nov24H_0_rel100", "posSum_RESF_inc_nov24H_0_rel100", "negSum_RESF_inc_nov24H_0_rel100"]
+X = @time queryStepWiseDF(myquery, retvalues)
+@time sort!(X, [:permno, :date])
+
 
 monthrange = Month(3)
 y1 = Dates.DateTime(2002,12,31):monthrange:Dates.DateTime(2017,12,31)-monthrange
