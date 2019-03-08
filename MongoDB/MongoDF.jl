@@ -50,6 +50,14 @@ function glassdoorMongoDF(retvalues::Array{String,1}, collName; myquery=Dict())
         collection = db.Glassdoors_1
     elseif collName=="Companies_1"
         collection = db.Companies_1
+    elseif collName=="Companies_2"
+        collection = db.Companies_2
+    elseif collName=="Glassdoors_2"
+        collection = db.Glassdoors_2
+    elseif collName=="Companies_3"
+        collection = db.Companies_3
+    elseif collName=="Glassdoors_3"
+        collection = db.Glassdoors_3
     end
 
     X, cols = py"cursordf"(collection.find(myquery, retvalues))
@@ -78,14 +86,15 @@ function convertPyArray(X::PyObject, colnames::Array{Symbol,1})
                             :SM, :recommended, :outlook, :LBO, :Summary, :CEO, :Company, :Main, :Pros, :Cons,
                             :Location, :Position, :MgtAdv, :nbReviews, :Announced, :Competitors, :Description,
                             :Founded, :Headquarters, :Industry, :OrigName, :Ownership_Type, :Revenue, :Size,
-                            :State, :Closed]) && String(colnames[i])[1:2]!="nS"
+                            :State, :Closed, :CompetitorsCiq, :CompetitorsGlassdoor, :SectorCiq]) && String(colnames[i])[1:2]!="nS"
             res[colnames[i]] = replace(convert(Array{Union{Missing,Float64}}, py"$(X)[:,$(i-1)]"), NaN=>missing)
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:date, :Date, :Announced, :Closed]
             res[colnames[i]] = convert(Array{DateTime}, py"$(X)[:,$(i-1)]")
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:gsector, :Summary, :CEO, :Company, :Main, :Pros, :Cons, :Location, :Position, :MgtAdv, :Competitors, :Description,
-                                :Founded, :Headquarters, :Industry, :OrigName, :Ownership_Type, :Revenue, :Size, :State]
+                                :Founded, :Headquarters, :Industry, :OrigName, :Ownership_Type, :Revenue, :Size, :State, :CompetitorsCiq,
+                                :CompetitorsGlassdoor, :SectorCiq]
             prov = replace(convert(Array{Any}, py"$(X)[:,$(i-1)]"), NaN=>missing)
             stringArray = []
             for i in prov
