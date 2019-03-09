@@ -16,6 +16,9 @@ CSV.write("/home/nicolas/Documents/Paper L Phalippou/Data/Reviews_raw.csv", Revi
 X = join(Reviews, Companies, on=:Company, kind=:left)
 X[:CEO] = replace(X[:CEO], "No opinion of"=>0, "Disapproves of"=>-1, "Approves of"=>1)
 
+A = X[X[:Company].=="PetSmart", :]
+CSV.write("/home/nicolas/Documents/Paper L Phalippou/Data/PetSmart_reviews.csv", A, delim="|")
+
 ### Cumulative distribution of number of reviews per firms ###
 plotlyjs()
 plot(cumsum(sort(Companies[:nbReviews])), label="", xlabel = "Cumulated # of firms", xticks = 0:500:4500,

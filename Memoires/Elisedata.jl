@@ -7,9 +7,8 @@ retvalues = ["date", "permno", "permid",
              "nS_RESF_inc_nov24H_0_rel100", "posSum_RESF_inc_nov24H_0_rel100", "negSum_RESF_inc_nov24H_0_rel100",
              "nS_BACT_inc_nov24H_0_rel100", "posSum_BACT_inc_nov24H_0_rel100", "negSum_BACT_inc_nov24H_0_rel100",
              "nS_CMPNY_inc_nov24H_0_rel100", "posSum_CMPNY_inc_nov24H_0_rel100", "negSum_CMPNY_inc_nov24H_0_rel100",
-             "nS_MNGISS_inc_nov24H_0_rel100", "posSum_MNGISS_inc_nov24H_0_rel100", "negSum_MNGISS_inc_nov24H_0_rel100",
-             "nS_DEAL1_inc_nov24H_0_rel100", "posSum_DEAL1_inc_nov24H_0_rel100", "negSum_DEAL1_inc_nov24H_0_rel100"]
-X = @time TRNAmongoDF(retvalues; monthrange = Month(3), startDate = DateTime(2011,12,31), endDate = DateTime(2017,12,31))
+             "nS_MNGISS_inc_nov24H_0_rel100", "posSum_MNGISS_inc_nov24H_0_rel100", "negSum_MNGISS_inc_nov24H_0_rel100"]
+X = @time TRNAmongoDF(retvalues; monthrange = Month(3), startDate = DateTime(2010,12,31), endDate = DateTime(2017,12,31))
 X = X[.!ismissing.(X[:nS_nov24H_0_rel100]), :]
 sort!(X, [:permid, :date])
 @time CSV.write("/home/nicolas/Documents/Memoires/elisedata.csv", X)
