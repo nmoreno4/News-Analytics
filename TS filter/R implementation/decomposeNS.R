@@ -63,7 +63,16 @@ gdp_reg <- yth_glm(GDPC1, h = 8, p = 2)
 summary(gdp_reg)
 
 
-if (2==2){
-  print("hey")
-}
+a = readRDS("/home/nicolas/Documents/CF DR paper/Regressions/DR_TRMI_perp.rds")
 
+
+paths = .libPaths()
+
+## Try and detect bad files
+list.files(paths, 
+           pattern = "^00LOCK*|*\\.rds$|*\\.RDS$",
+           full.names = TRUE)
+
+## List files of size 0
+l = list.files(paths, full.names = TRUE, recursive=TRUE)
+l[sapply(l, file.size) == 0]
