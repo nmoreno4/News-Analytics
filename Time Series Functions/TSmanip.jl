@@ -1,7 +1,12 @@
 module TSmanip
 
 using TSmap, DataFrames, Statistics, StatsBase, FindFcts, DataStructures, Dates
-export ret2tick, cumret2, cumret, aggRetByPeriod, aggNewsByPeriod, NSsuprise, computeNS, NSsuprise2
+export ret2tick, cumret2, cumret, aggRetByPeriod, aggNewsByPeriod, NSsuprise,
+       computeNS, NSsuprise2, cumlogret
+
+function cumlogret(x)
+    return sum([!ismissing(r) ? log(1+r) : 0 for r in x])
+end
 
 function ret2tick(vec::AbstractArray, val=100 ; ignoremissing=false, dropinception=false)
     res = Float64[val]

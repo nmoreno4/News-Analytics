@@ -1,12 +1,11 @@
 module TRMIdata
 using InfoZIP, CSV, DataFrames, PyCall, Dates
-export load_market_TRMI, aggregTRMI, rollingAggregTRMI, multipleTRMIvars
+export load_market_TRMI, aggregTRMI, rollingAggregTRMI, multipleTRMIvars, load_CMPNY_TRMI
 
 function __init__()
     py"""
     import os
     def renameCSV(extractDir):
-        print(extractDir)
         for filename in os.listdir(extractDir):
             # print(extractDir + "/" + filename[0:-3]+"csv")
             os.rename(extractDir + "/" + filename, extractDir + "/" + filename[0:-3]+"csv")
@@ -40,17 +39,61 @@ function load_market_TRMI(crtdir="/home/nicolas/Data/TRMI", country="US", target
     df = CSV.read("$(extractDir)/$(crtfile)", delim='	')
     df = df[df[:assetCode].==country, :]
 
-    df = addTRMIdfs!(df, filenames[2:end], extractDir, country)
+    df = addTRMIdfs!(df, filenames[2:end], extractDir; filt=[:assetCode, country])
+
+    return df
+end
+#
+# X[X[:assetCode].==4295899948, [:sentiment, :buzz, :dataType, :windowTimestamp]]
+# X[[:sentiment, :buzz, :assetCode, :dataType, :windowTimestamp]]
+X = load_CMPNY_TRMI("TEC", "/home/nicolas/Data/TRMI/CMPNY/WDAI_UDAI", "US", "extracted", ".02")
+# Set(X[:sentiment])
+# length(collect(skipmissing(X[:emotionVsFact])))
+function load_CMPNY_TRMI(sector, crtdir="/home/nicolas/Data/TRMI/CMPNY/WDAI_UDAI", country="US", targetextract = "extracted", vers=".03")
+    filenames = readdir("$(crtdir)/$(country)/$(sector)")
+    try
+        mkdir("$(crtdir)/$(country)/$(targetextract)")
+    catch err
+        print("Directory '$(crtdir)/$(country)/$(targetextract)' already exists")
+    end
+
+    for crtfile in filenames
+        if occursin(vers, crtfile)
+            try
+                InfoZIP.unzip("$(crtdir)/$(country)/$(sector)/$(crtfile)", "$(crtdir)/$(country)/$(targetextract)/")
+            catch err
+                print("File already extracted here")
+            end
+        end
+    end
+
+    extractDir = "$(crtdir)/$(country)/$(targetextract)"
+
+    py"""
+    renameCSV($extractDir)
+    """
+
+    filenames = readdir(extractDir)
+    crtfile = filenames[1]
+    # Read first CSV
+    df = CSV.read("$(extractDir)/$(crtfile)", delim='	')
+    # Join all CSVs
+    df = addTRMIdfs!(df, filenames[2:end], extractDir)
 
     return df
 end
 
 
 
-function addTRMIdfs!(df, filenames, extractDir, country)
+
+function addTRMIdfs!(df, filenames, extractDir; filt=nothing)
     for crtfile in filenames
         prov = CSV.read("$(extractDir)/$(crtfile)", delim='	')
-        df = vcat(df, prov[prov[:assetCode].==country, :])
+        if isnothing(filt)
+            df = vcat(df, prov)
+        else
+            df = vcat(df, prov[prov[filt[1]].==filt[2], :])
+        end
     end
     return df
 end

@@ -1,5 +1,5 @@
 module TimeSeriesFcts
-export cumret, TStoArray, nonnanidx
+export cumret, TStoArray, nonnanidx, cumlogret
 
 function cumret(x, s = 1)
     res = Float64[s]
@@ -9,6 +9,10 @@ function cumret(x, s = 1)
         push!(res, res[cc]*(1+ret))
     end
     return res
+end
+
+function cumlogret(x)
+    return sum([!ismissing(r) ? log(1+r) : 0 for r in x])
 end
 
 function TStoArray(TS)

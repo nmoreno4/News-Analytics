@@ -55,6 +55,7 @@ mod, confInt = lmR(TRMI, [0,0], [0,0], vars, vNames; filename=regnames[4])
 
 
 #### Cumulate returns ####
+maxlength = 100
 function futureExpectedRet(df, i; var=:MktRet)
     winLength = Month(i)
     res, dates = [[] for i in 1:2]
@@ -64,7 +65,7 @@ function futureExpectedRet(df, i; var=:MktRet)
         else
             crtdf = df[findall((df[:date].<date) .& (df[:date].>=date-winLength)), :]
         end
-        push!(res, cumret(crtdf[var]))
+        push!(res, cumlogret(crtdf[var]))
         push!(dates, date-Day(1))
     end
     return lead(res .* 100, i), dates
@@ -79,19 +80,31 @@ for i in 0:maxlength
 end
 TRMI[:MktRet] = TRMI[:MktRet] .* 100
 TRNA[:MktRet] = TRNA[:MktRet] .* 100
-
+TRMI[:CF] = TRMI[:CF] .* 100
+TRNA[:CF] = TRNA[:CF] .* 100
+TRMI[:DR] = TRMI[:DR] .* 100
+TRNA[:DR] = TRNA[:DR] .* 100
 
 ### IRF ###
-i=2
-vars = [Symbol("CF_f$(i)"), :stockIndexSentiment]; vNames = [Symbol("MktRet_f$(i)"), :TRMI_N_perpCF]
-mod, confInt = lmR(TRMI, [0,0], [0,0], vars, vNames)
-vars = [:CF, :stockIndexSentiment]; vNames = [Symbol("MktRet"), :TRMI_N_perpCF]
 
+@rput TRNA
+R"""
+m1 = lm(CF ~ scale(stockIndexSentiment_2), data=TRNA)
+m2 = lm(CF ~ scale(stockIndexSentiment), data=TRNA)
+m3 = lm(CF ~ scale(SentALL), data=TRNA)
+m4 = lm(CF ~ scale(SentRES), data=TRNA)
+stargazer(m1,m2,m3,m4, report = "vc*t")
+"""
 
-maxlength = 60
+# ["stockIndexSentiment", "stockIndexSentiment_1", "stockIndexSentiment_2", "SentALL", "SentRES", "SentRESF", "SentNORES"]
+withControls = false
 for retvar in ["CF", "DR", "MktRet"]
-    for newsvar in ["stockIndexSentiment", "stockIndexSentiment_1", "stockIndexSentiment_2", "SentALL", "SentRES", "SentRESF", "SentNORES"]
-        if occursin("stockIndexSentiment", newsvar)
+    indVars = ["stockIndexSentiment", "stockIndexSentiment_2", "SentALL", "SentRES"]
+    for v in 1:length(indVars)
+        newsvar = indVars[v]
+        reOrd = [[v]; setdiff(1:length(indVars), [v])]
+        indVars = indVars[reOrd]
+        if occursin("stockIndexSentiment", newsvar) && !withControls
             df = TRMI
         else
             df = TRNA
@@ -100,16 +113,28 @@ for retvar in ["CF", "DR", "MktRet"]
             coeff, ci_low, ci_high, tstat, r2 = [[] for i in 1:5]
             for i in 0:maxlength
                 if noCycleControl
-                    vars = [Symbol("$(retvar)_f$(i)"), Symbol("$newsvar")]; vNames = [Symbol("MktRet_f$(i)"), :TRMI_N_perpCF]
-                    mod, confInt = lmR(df, [0,0], [0,0], vars, vNames)
+                    if withControls
+                        vars = [Symbol("$(retvar)_f$(i)"); Symbol.(indVars)]; vNames = [[Symbol("MktRet_f$(i)")]; Symbol.(indVars)]
+                        zeroVec = [0 for i in vars]
+                        mod, confInt = lmR(df, zeroVec, zeroVec, vars, vNames)
+                    else
+                        vars = [Symbol("$(retvar)_f$(i)"), Symbol("$newsvar")]; vNames = [Symbol("MktRet_f$(i)"), :TRMI_N_perpCF]
+                        mod, confInt = lmR(df, [0,0], [0,0], vars, vNames)
+                    end
                 else
                     if i == 0
                         df[:cumUSREC] = df[:USREC]
                     else
                         df[:cumUSREC] = lead(running(sum, df[:USREC], i), i)
                     end
-                    vars = [Symbol("$(retvar)_f$(i)"), Symbol("$newsvar"), :cumUSREC, :stockIndexSentiment_2, :SentALL]; vNames = [Symbol("MktRet_f$(i)"), :TRMI_N_perpCF, :USREC, :a, :b]
-                    mod, confInt = lmR(df, [0,0,0,0,0], [0,0,0,0,0], vars, vNames)
+                    if withControls
+                        vars = [Symbol("$(retvar)_f$(i)"); Symbol.(indVars); [:cumUSREC]]; vNames = [[Symbol("MktRet_f$(i)")]; Symbol.(indVars) ; [:USREC]]
+                        zeroVec = [0 for i in vars]
+                        mod, confInt = lmR(df, zeroVec, zeroVec, vars, vNames)
+                    else
+                        vars = [Symbol("$(retvar)_f$(i)"), Symbol("$newsvar"), :cumUSREC]; vNames = [Symbol("MktRet_f$(i)"), Symbol(newsvar), :USREC]
+                        mod, confInt = lmR(df, [0,0,0], [0,0,0], vars, vNames)
+                    end
                 end
                 # vars = [Symbol("$(retvar)_f$(i)"), Symbol("$newsvar")]; vNames = [Symbol("MktRet_f$(i)"), :TRMI_N_perpCF, :USREC]
                 push!(coeff, mod[:coefficients][2,1])
@@ -119,8 +144,32 @@ for retvar in ["CF", "DR", "MktRet"]
                 push!(ci_high, confInt[2,2])
             end
             refline, zero = [-coeff[1] for i in coeff], [0 for i in coeff]
+            up, low = [2 for i in coeff], [-2 for i in coeff]
+
+            #########
+            plot([coeff], xticks=0:6:maxlength, title = "Cumulated CF/DR ~ TRMI_S", titlefontsize=16,
+                    yticks = floor(minimum(ci_low))-2:2:ceil(maximum(ci_high)), labels = "Cumulated CF shocks", color = :blue,
+                    xlabel = "Months after news", ylabel = "Cumulated return in %", legend=:topleft, line=1, legendfontsize=10)
+            plot!([ci_low, ci_high], labels = "", color = :blue, line = :dot)
+            irf = plot!([zero], labels = "", color = :black)
+            plot!([coeff], labels = "Cumulated DR shocks", color = :red, legendfontsize=12)
+            irf = plot!([ci_low, ci_high], labels = "", color = :red, line = :dot)
+
+            plot([tstat], title = "t-stat of impact of TRMI_S on cumulated CF/DR", color=:blue, xticks=0:6:maxlength, legend=:topleft,
+                            xlabel = "Months after news", ylabel = "t-stat", labels = "CF impact", titlefontsize=16, legendfontsize=10)
+            tplot = plot!([low, up], labels = "", color = :black)
+            tplot = plot!([tstat], labels = "DR impact", color = :red, yticks=-8:1:8, legendfontsize=12)
+
+            r2plot = plot([r2], title = "Adjusted R2 of impact of TRMI_S on cumulated CF/DR", labels="CF impact", xticks=0:6:maxlength,
+                    xlabel = "Months after news", ylabel = "Adj R2", color=:blue, titlefontsize=16, legend=:topleft, legendfontsize=10)
+            r2plot = plot!([r2], color=:red, labels="DR impact", legendfontsize=12, yticks=0:0.05:0.95)
+
+            finalplot = plot(irf, tplot, r2plot, layout = (3,1), size = (1000, 1500))
+            savefig(finalplot, "/home/nicolas/cycle_TRMI_S.png")
+            #########
+
             IRFplot = plot([coeff, ci_low, ci_high, refline, zero], xticks=0:6:maxlength, title = "Cumulated $(retvar) ~ $newsvar / Cycle=$(!noCycleControl)",
-                    yticks = floor(minimum(ci_low)):1:ceil(maximum(ci_high)), labels = "",
+                    yticks = floor(minimum(ci_low))-2:1:ceil(maximum(ci_high)), labels = "",
                     xlabel = "Months after news", ylabel = "Cumulated return in %", legend=:topleft, line=1, legendfontsize=6)
             if retvar=="CF"
                 filepath = "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_acf.png"
@@ -139,14 +188,13 @@ for retvar in ["CF", "DR", "MktRet"]
                 dev.off()
                 """
             end
-            png(IRFplot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_irf_Cyc$(noCycleControl).png")
-            up, low = [2 for i in coeff], [-2 for i in coeff]
-            tstatplot = plot([tstat, low, up], title = "t-stat of impact of $newsvar on cumulated $(retvar) / Cycle=$(!noCycleControl)",
+            png(IRFplot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_irf_Cyc$(!noCycleControl)_contr$(withControls).png")
+            tstatplot = plot([tstat, low, up], title = "t-stat of impact of $newsvar on cumulated CF/DR",
                             xlabel = "Months after news", ylabel = "t-stat", labels = "", titlefontsize=10)
-            png(tstatplot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_tstat_Cyc$(noCycleControl).png")
+            png(tstatplot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_tstat_Cyc$(!noCycleControl)_contr$(withControls).png")
             r2plot = plot([r2], title = "Adjusted R2 of impact of $newsvar on cumulated $(retvar) / Cycle=$(!noCycleControl)",
                             xlabel = "Months after news", ylabel = "Adj R2", labels = "", titlefontsize=10)
-            png(r2plot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_R2_Cyc$(noCycleControl).png")
+            png(r2plot, "/home/nicolas/Documents/CF DR paper/IRF/$(newsvar)_$(retvar)_R2_Cyc$(!noCycleControl)_contr$(withControls).png")
         end
     end
 end

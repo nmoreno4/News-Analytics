@@ -86,7 +86,8 @@ function convertPyArray(X::PyObject, colnames::Array{Symbol,1})
                             :SM, :recommended, :outlook, :LBO, :Summary, :CEO, :Company, :Main, :Pros, :Cons,
                             :Location, :Position, :MgtAdv, :nbReviews, :Announced, :Competitors, :Description,
                             :Founded, :Headquarters, :Industry, :OrigName, :Ownership_Type, :Revenue, :Size,
-                            :State, :Closed, :CompetitorsCiq, :CompetitorsGlassdoor, :SectorCiq]) && String(colnames[i])[1:2]!="nS"
+                            :State, :Closed, :CompetitorsCiq, :CompetitorsGlassdoor, :SectorCiq, :conm,
+                            :gvkey]) && String(colnames[i])[1:2]!="nS"
             res[colnames[i]] = replace(convert(Array{Union{Missing,Float64}}, py"$(X)[:,$(i-1)]"), NaN=>missing)
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:date, :Date, :Announced, :Closed]
@@ -94,19 +95,23 @@ function convertPyArray(X::PyObject, colnames::Array{Symbol,1})
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:gsector, :Summary, :CEO, :Company, :Main, :Pros, :Cons, :Location, :Position, :MgtAdv, :Competitors, :Description,
                                 :Founded, :Headquarters, :Industry, :OrigName, :Ownership_Type, :Revenue, :Size, :State, :CompetitorsCiq,
-                                :CompetitorsGlassdoor, :SectorCiq]
+                                :CompetitorsGlassdoor, :SectorCiq, :conm]
             prov = replace(convert(Array{Any}, py"$(X)[:,$(i-1)]"), NaN=>missing)
             stringArray = []
             for i in prov
-                if py"$i is None"
+                if py"$i is None or pd.isna($i)"
                     push!(stringArray, missing)
                 else
-                    push!(stringArray, convert(String, i))
+                    try
+                        push!(stringArray, convert(String, i))
+                    catch
+                        error(i)
+                    end
                 end
             end
             res[colnames[i]] = convert(Array{Union{String,Missing}}, stringArray)
             push!(finalnames, colnames[i])
-        elseif String(colnames[i])[1:2]=="nS" || colnames[i] in [:Poprank, :Score, :WLB, :Cult, :CO, :CB, :SM, :recommended, :outlook, :LBO, :nbReviews]
+        elseif String(colnames[i])[1:2]=="nS" || colnames[i] in [:Poprank, :Score, :WLB, :Cult, :CO, :CB, :SM, :recommended, :outlook, :LBO, :nbReviews, :gvkey]
             res[colnames[i]] = convert(Array{Union{Missing,Int}}, replace(convert(Array{Float64},py"$(X)[:,$(i-1)]"), NaN=>missing))
             push!(finalnames, colnames[i])
         elseif colnames[i] in [:permno]

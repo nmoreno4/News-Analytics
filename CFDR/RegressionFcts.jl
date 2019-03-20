@@ -51,6 +51,7 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     filepath = "$rootdir/$filename"
     if length(vars) == 2
         R"""
+        print(vars[1])
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
         b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
         mod = lm( a ~ b)
@@ -105,8 +106,8 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
         b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
         c =  scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
-        e =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
-        f =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        d =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
         mod = lm( a ~ b + c + d + e )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
@@ -122,11 +123,11 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     elseif length(vars) == 6
         R"""
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
-        b =  unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])]
-        c =  unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])]
-        d =  unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])]
-        e =  unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])]
-        f =  unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])]
+        b =   scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
+        c =   scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
+        d =   scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =   scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        f =   scale(unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])])
         mod = lm( a ~ b + c + d + e + f )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
@@ -143,12 +144,12 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     elseif length(vars) == 7
         R"""
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
-        b =  unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])]
-        c =  unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])]
-        d =  unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])]
-        e =  unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])]
-        f =  unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])]
-        g =  unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])]
+        b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
+        c =  scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
+        d =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        f =  scale(unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])])
+        g =  scale(unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])])
         mod = lm( a ~ b + c + d + e + f + g )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
@@ -165,13 +166,13 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     elseif length(vars) == 8
         R"""
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
-        b =  unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])]
-        c =  unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])]
-        d =  unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])]
-        e =  unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])]
-        f =  unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])]
-        g =  unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])]
-        h =  unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])]
+        b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
+        c =  scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
+        d =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        f =  scale(unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])])
+        g =  scale(unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])])
+        h =  scale(unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])])
         mod = lm( a ~ b + c + d + e + f + g + h )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
@@ -188,14 +189,14 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     elseif length(vars) == 9
         R"""
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
-        b =  unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])]
-        c =  unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])]
-        d =  unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])]
-        e =  unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])]
-        f =  unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])]
-        g =  unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])]
-        h =  unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])]
-        i =  unlist(X[vars[9]], use.names=FALSE)[(1+$lags[9]):(sz-$leads[9])]
+        b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
+        c =  scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
+        d =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        f =  scale(unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])])
+        g =  scale(unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])])
+        h =  scale(unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])])
+        i =  scale(unlist(X[vars[9]], use.names=FALSE)[(1+$lags[9]):(sz-$leads[9])])
         mod = lm( a ~ b + c + d + e + f + g + h + i )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
@@ -212,15 +213,15 @@ function lmR(X, lags, leads, vars, vNames; showSummary=true, diffs = 0, filename
     elseif length(vars) == 10
         R"""
         a =  unlist(X[vars[1]], use.names=FALSE)[(1+$lags[1]):(sz-$leads[1])]
-        b =  unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])]
-        c =  unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])]
-        d =  unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])]
-        e =  unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])]
-        f =  unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])]
-        g =  unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])]
-        h =  unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])]
-        i =  unlist(X[vars[9]], use.names=FALSE)[(1+$lags[9]):(sz-$leads[9])]
-        j =  unlist(X[vars[10]], use.names=FALSE)[(1+$lags[10]):(sz-$leads[10])]
+        b =  scale(unlist(X[vars[2]], use.names=FALSE)[(1+$lags[2]):(sz-$leads[2])])
+        c =  scale(unlist(X[vars[3]], use.names=FALSE)[(1+$lags[3]):(sz-$leads[3])])
+        d =  scale(unlist(X[vars[4]], use.names=FALSE)[(1+$lags[4]):(sz-$leads[4])])
+        e =  scale(unlist(X[vars[5]], use.names=FALSE)[(1+$lags[5]):(sz-$leads[5])])
+        f =  scale(unlist(X[vars[6]], use.names=FALSE)[(1+$lags[6]):(sz-$leads[6])])
+        g =  scale(unlist(X[vars[7]], use.names=FALSE)[(1+$lags[7]):(sz-$leads[7])])
+        h =  scale(unlist(X[vars[8]], use.names=FALSE)[(1+$lags[8]):(sz-$leads[8])])
+        i =  scale(unlist(X[vars[9]], use.names=FALSE)[(1+$lags[9]):(sz-$leads[9])])
+        j =  scale(unlist(X[vars[10]], use.names=FALSE)[(1+$lags[10]):(sz-$leads[10])])
         mod = lm( a ~ b + c + d + e + f + g + h + i + j )
         confInt = confint(mod)
         names(mod['coefficients'][[1]]) = c("Intercept", vNames[2:length(vNames)])
