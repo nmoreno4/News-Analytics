@@ -1,7 +1,8 @@
 module TSfunctions
 using nanHandling
 
-export ret2tick, sameweek, freq_adj, monthlyDriftWeight, getOutOfSet, setNonPortfolioRetsToNaN!, averagePeriod, newPeriodsDatesIdx, concernedStocks
+export ret2tick, sameweek, freq_adj, monthlyDriftWeight, getOutOfSet,
+  setNonPortfolioRetsToNaN!, averagePeriod, newPeriodsDatesIdx, concernedStocks
 
 """
 # Description

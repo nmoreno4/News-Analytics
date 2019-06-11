@@ -1,7 +1,7 @@
 ##########################################################################################
 # This file gathers yearly data from Compustat and monthly data from CRSP to construct
 # FF factor breakpoints. It stores the merged monthly CRSP data, the yearly CS and the
-# size and B/M decile rankings in the MongoDB Dec2018 database in collection PermnoDay.
+# size and B/M decile rankings in the MongoDB Jan2019 database in collection PermnoDay.
 ##########################################################################################
 using WRDSdownload, CSV, DataFrames, JLD2, StatsBase, Dates, Statistics,
       RollingFunctions, ShiftedArrays, Buckets, PermidMatch
@@ -11,6 +11,11 @@ CSdaterange = ["01/01/2000", "12/31/2019"]
 CRSPdaterange = ["01/01/2000", "7/1/2018"]
 truestart = Dates.Date(2003,1,1)
 trueend = Dates.Date(2017,12,31)
+
+using Mongoc, Dates, JSON, DataStructures
+client = Mongoc.Client()
+database = client["Jan2019"]
+collection = database["PermnoDay"]
 
 ############## Compustat Variable description ##############
 # at:
@@ -347,10 +352,6 @@ names!(monthlyMerge, [:permno, :gvkey, :permid, :ymonth, :prcM, :volM, :spreadM,
 ##########################################
 # Merge daily MongoDB with monthly data  #
 ##########################################
-using Mongoc, Dates, JSON, DataStructures
-client = Mongoc.Client()
-database = client["Jan2019"]
-collection = database["PermnoDay"]
 
 for row in 1:size(monthlyMerge,1)
 

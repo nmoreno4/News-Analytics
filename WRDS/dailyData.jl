@@ -1,3 +1,6 @@
+########################################################################
+# When building the database, start with this file: populate all days! #
+########################################################################
 using WRDSdownload, DataFrames, Dates, StatsBase, TimeZones, Windsorize
 
 
@@ -103,9 +106,9 @@ end
 
 
 
-############################################################
-# This part only if you wish to update a specific variable #
-############################################################
+#####################################################################
+# This part only if you wish to update a specific variable later on #
+#####################################################################
 # varToUpdate = :me
 #
 # using Mongoc, Dates, JSON
